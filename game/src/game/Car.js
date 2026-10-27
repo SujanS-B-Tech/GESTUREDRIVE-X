@@ -22,6 +22,7 @@ export class Car {
     this.steerAngle = 0.0;
     this.maxSteerAngle = 0.52;  // Radians (~30 deg)
     this.yaw = 0.0;             // Car heading in world space
+    this.touchingBarrier = null; // 'left' | 'right' | null
 
     // Suspension & Chassis Roll
     this.roll = 0.0;
@@ -304,6 +305,7 @@ export class Car {
     this.steerAngle = 0;
     this.roll = 0;
     this.pitch = 0;
+    this.touchingBarrier = null;
   }
 
   update(delta, input) {
@@ -313,8 +315,18 @@ export class Car {
     const speedRatio = Math.min(1.0, this.speed / this.maxSpeed);
     // At high speeds, dynamic attenuation prevents erratic overturning
     const steerAttenuation = 1.0 - speedRatio * 0.45;
-    const targetSteer = -(input.steer || 0.0) * this.maxSteerAngle * steerAttenuation;
+
+    let steerCmd = input.steer || 0.0;
+    // Barrier contact prevention: clamp steering from penetrating deeper into wall
+    if (this.touchingBarrier === 'left' && steerCmd < 0) steerCmd = 0;
+    if (this.touchingBarrier === 'right' && steerCmd > 0) steerCmd = 0;
+
+    const targetSteer = -(steerCmd) * this.maxSteerAngle * steerAttenuation;
     this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1.0, delta * 12.0);
+
+    // Cancel opposing steer angle if scraping barrier
+    if (this.touchingBarrier === 'left' && this.steerAngle > 0) this.steerAngle = 0;
+    if (this.touchingBarrier === 'right' && this.steerAngle < 0) this.steerAngle = 0;
 
     // Steer front wheels
     this.frontWheels.forEach(w => {

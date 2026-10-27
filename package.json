@@ -9,7 +9,8 @@
     "game": "electron .",
     "app": "electron .",
     "test": "node test_webcam_steering.js",
-    "test:integration": "node test_integration.js"
+    "test:integration": "node test_integration.js",
+    "test:collision": "node test_collision_stability.js"
   },
   "keywords": [
     "racing",

@@ -51,6 +51,8 @@ class GameApp {
     this.coins = 0;
     this.highScore = parseInt(localStorage.getItem('GD_HIGHSCORE') || '0', 10);
     this.raceStartTime = 0;
+    this.lastBarrierHitTime = 0;
+    this.lastSparkTime = 0;
 
     // Keyboard Fallback Input
     this.keys = {
@@ -441,16 +443,34 @@ class GameApp {
     // 2. Update Highway Track & Recycled Chunks
     this.track.update(this.car.mesh.position.z);
 
-    // 3. Track Barrier Collisions
-    const barrierHit = this.track.checkBarrierCollision(this.car);
+    // 3. Track Barrier Collisions (Continuous glide physics with debounced audio & sparks)
+    const barrierHit = this.track.checkBarrierCollision(this.car, delta);
     if (barrierHit.hit) {
-      this.audio.playCrash();
-      this.particles.spawnSparks(
-        this.car.mesh.position,
-        { x: barrierHit.side === 'left' ? -1 : 1, z: 0 }
-      );
+      const now = performance.now();
+      // Debounce crash audio so it only triggers on initial impact
+      if (!this.lastBarrierHitTime || now - this.lastBarrierHitTime > 450) {
+        this.audio.playCrash();
+        this.lastBarrierHitTime = now;
+      }
+      // Emit sparks with throttled interval during sustained scrape
+      if (!this.lastSparkTime || now - this.lastSparkTime > 75) {
+        this.particles.spawnSparks(
+          this.car.mesh.position,
+          { x: barrierHit.side === 'left' ? -1 : 1, z: 0 }
+        );
+        this.lastSparkTime = now;
+      }
       this.nearMissStreak = 0; // Break streak
     }
+
+    // 4. Waypoint Checkpoints & Split Sectors
+    this.track.checkCheckpoints(this.car.mesh.position, (cp) => {
+      this.score += 500;
+      this.audio.playCoinSound();
+      if (this.hud) {
+        this.hud.showCheckpointBanner(`CHECKPOINT ${cp.index}`, `+500 PTS • ${Math.round(this.car.speed)} KM/H`);
+      }
+    });
 
     // 4. Track Pickups (Coins & Nitro)
     this.track.checkPickups(

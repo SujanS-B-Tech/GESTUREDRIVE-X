@@ -195,6 +195,24 @@ export class HUD {
     }, 1800);
   }
 
+  showCheckpointBanner(title, subtitle) {
+    if (!this.comboPopup) return;
+
+    if (this.comboText) {
+      this.comboText.textContent = title;
+    }
+    if (this.comboScore) {
+      this.comboScore.textContent = subtitle;
+    }
+
+    this.comboPopup.classList.add('active');
+
+    if (this.comboTimer) clearTimeout(this.comboTimer);
+    this.comboTimer = setTimeout(() => {
+      this.comboPopup.classList.remove('active');
+    }, 2000);
+  }
+
   _renderRadar(car, trafficManager) {
     if (!this.radarCtx || !this.radarCanvas) return;
     const ctx = this.radarCtx;
