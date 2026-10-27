@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>GESTUREDRIVE X — Smart AI Controller</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/style.css">
+  
+  <!-- MediaPipe Hands & CameraUtils CDN Fallback for Universal Mobile Support -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body class="theme-dark">
+  <div id="app" class="controller-container">
+    
+    <!-- TOP STATUS BAR -->
+    <header class="controller-header">
+      <div class="brand">
+        <span class="brand-sub">GESTUREDRIVE</span>
+        <span class="brand-highlight">X</span>
+      </div>
+      <div class="session-tag" id="session-tag">
+        <span class="label">SESSION</span>
+        <span class="code" id="session-code-display">----</span>
+      </div>
+      <div class="status-group">
+        <span class="ping-pill" id="ping-pill">
+          <span class="dot"></span>
+          <span id="ping-val">-- ms</span>
+        </span>
+        <span class="badge badge-disconnected" id="conn-badge">CONNECTING</span>
+      </div>
+    </header>
+
+    <!-- PAIRING MODAL OVERLAY (if not connected) -->
+    <div class="pairing-modal" id="pairing-modal">
+      <div class="pairing-card">
+        <div class="card-glow"></div>
+        <div class="brand-large">
+          <span>GESTUREDRIVE</span><span class="neon-x">X</span>
+        </div>
+        <h2 class="card-title">SMART CONTROLLER</h2>
+        <p class="card-desc">Control the AAA racing game on your main screen using real-time AI hand movements.</p>
+
+        <div class="input-row">
+          <label for="session-input">ENTER SESSION CODE</label>
+          <div class="input-wrapper">
+            <span class="prefix">GD-</span>
+            <input type="text" id="session-input" placeholder="XXXX" maxlength="6" autocomplete="off" autocorrect="off" autocapitalize="characters">
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-large" id="btn-pair">
+          <span>CONNECT & START CAMERA</span>
+          <span class="btn-arrow">→</span>
+        </button>
+
+        <div class="pairing-tips">
+          <span>💡 Tip: Scan the QR code shown on the PC racing screen to auto-pair.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN TRACKING STAGE -->
+    <main class="tracking-stage" id="tracking-stage">
+      <div class="video-wrapper">
+        <video id="webcam" playsinline autoplay muted></video>
+        <canvas id="hand-canvas"></canvas>
+
+        <!-- Dynamic Steering Arc Gauge -->
+        <div class="steering-gauge-overlay">
+          <div class="gauge-arc">
+            <div class="deadzone-marker"></div>
+            <div class="gauge-needle" id="gauge-needle"></div>
+          </div>
+          <div class="steer-readout" id="steer-readout">0°</div>
+        </div>
+
+        <!-- Gesture Status Badge Banner -->
+        <div class="gesture-banner" id="gesture-banner">
+          <span class="gesture-icon" id="gesture-icon">✋</span>
+          <span class="gesture-name" id="gesture-name">CENTER YOUR HAND</span>
+        </div>
+
+        <!-- Open Palm Hold Progress Ring -->
+        <div class="hold-ring-container" id="hold-ring-container">
+          <svg class="hold-ring-svg" viewBox="0 0 100 100">
+            <circle class="ring-bg" cx="50" cy="50" r="42"></circle>
+            <circle class="ring-progress" id="ring-progress" cx="50" cy="50" r="42"></circle>
+          </svg>
+          <div class="ring-label">HOLDING PAUSE</div>
+        </div>
+
+        <!-- Loss of Detection Alert -->
+        <div class="loss-alert" id="loss-alert">
+          <div class="pulse-icon">⚠️</div>
+          <div>HAND OUT OF FRAME</div>
+          <div class="sub-alert">Controls in Safe Neutral</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- TOUCHPAD FALLBACK BAR -->
+    <div class="touch-bar" id="touch-bar">
+      <button class="touch-btn btn-steer-left" id="btn-steer-left">◀</button>
+      <button class="touch-btn btn-brake" id="btn-touch-brake">BRAKE</button>
+      <button class="touch-btn btn-nitro" id="btn-touch-nitro">NITRO ⚡</button>
+      <button class="touch-btn btn-steer-right" id="btn-steer-right">▶</button>
+    </div>
+
+    <!-- BOTTOM CONTROL BAR -->
+    <footer class="controller-footer">
+      <button class="btn btn-action" id="btn-calibrate">
+        <span class="icon">🎯</span>
+        <span>CALIBRATE</span>
+      </button>
+      <button class="btn btn-action" id="btn-switch-cam">
+        <span class="icon">🔄</span>
+        <span>CAM</span>
+      </button>
+      <button class="btn btn-action" id="btn-toggle-touch">
+        <span class="icon">🎮</span>
+        <span>TOUCH</span>
+      </button>
+      <button class="btn btn-action" id="btn-guide">
+        <span class="icon">📖</span>
+        <span>GESTURES</span>
+      </button>
+      <button class="btn btn-action btn-danger" id="btn-pause-cmd">
+        <span class="icon">⏸️</span>
+        <span>PAUSE</span>
+      </button>
+    </footer>
+
+    <!-- GESTURE GUIDE MODAL -->
+    <div class="modal" id="guide-modal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>HAND GESTURE CONTROLS</h3>
+          <button class="btn-close" id="btn-close-guide">✕</button>
+        </div>
+        <div class="guide-grid">
+          <div class="guide-item">
+            <div class="gesture-symbol">✋ ◀ ▶</div>
+            <div class="gesture-title">STEERING</div>
+            <div class="gesture-desc">Move your hand left or right horizontally to turn the car. Return to center to drive straight.</div>
+          </div>
+          <div class="guide-item">
+            <div class="gesture-symbol">✊</div>
+            <div class="gesture-title">BRAKE / REVERSE</div>
+            <div class="gesture-desc">Close all fingers into a tight fist to brake firmly and stop the vehicle.</div>
+          </div>
+          <div class="guide-item">
+            <div class="gesture-symbol">👍</div>
+            <div class="gesture-title">NITRO BOOST</div>
+            <div class="gesture-desc">Give a thumbs-up (thumb straight up, fingers closed) to fire twin plasma nitro boosters!</div>
+          </div>
+          <div class="guide-item">
+            <div class="gesture-symbol">🖐️ (Hold)</div>
+            <div class="gesture-title">PAUSE / RESUME</div>
+            <div class="gesture-desc">Hold a flat open palm steady for 0.8s until the ring fills to pause or resume the game.</div>
+          </div>
+        </div>
+        <div class="sensitivity-slider-box">
+          <label>Steering Sensitivity: <span id="sens-val">1.3x</span></label>
+          <input type="range" id="sens-slider" min="0.6" max="2.5" step="0.1" value="1.3">
+        </div>
+        <button class="btn btn-primary btn-block" id="btn-got-it">READY TO DRIVE</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>

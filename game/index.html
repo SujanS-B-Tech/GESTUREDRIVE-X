@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GESTUREDRIVE X — AAA 3D Racing Experience</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./src/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.165.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body class="game-body">
+  
+  <!-- 3D WEBGL RENDER CANVAS CONTAINER -->
+  <div id="game-canvas-container"></div>
+
+  <!-- AAA GAMEPLAY HUD OVERLAY -->
+  <div id="hud-container" class="hud-overlay hidden">
+    
+    <!-- TOP BAR: SCORE, DISTANCE, BEST SCORE -->
+    <div class="hud-top-bar">
+      <div class="hud-stat-box">
+        <span class="hud-label">SCORE</span>
+        <span class="hud-value" id="hud-score-val">0</span>
+      </div>
+      <div class="hud-stat-box">
+        <span class="hud-label">DISTANCE</span>
+        <span class="hud-value" id="hud-dist-val">0.00 KM</span>
+      </div>
+      <div class="hud-stat-box">
+        <span class="hud-label">RECORD</span>
+        <span class="hud-value text-gold" id="hud-highscore-val">0</span>
+      </div>
+    </div>
+
+    <!-- LAPTOP WEBCAM GESTURE STEERING HUD WIDGET -->
+    <div class="webcam-hud-widget" id="webcam-hud-widget">
+      <div class="webcam-hud-header">
+        <div class="cam-status-pill" id="cam-status-pill">
+          <span class="cam-dot"></span>
+          <span id="cam-status-text">WEBCAM OFF</span>
+        </div>
+        <div class="cam-header-buttons">
+          <button class="btn-hud-icon" id="btn-hud-cam-calibrate" title="Calibrate Neutral Steering Wheel Center">🎯</button>
+          <button class="btn-hud-icon" id="btn-hud-cam-invert" title="Invert Steering Direction">🔄</button>
+          <button class="btn-hud-icon active" id="btn-hud-cam-toggle" title="Toggle Webcam Steering">📹</button>
+        </div>
+      </div>
+
+      <!-- Live Video & Skeleton Overlay Canvas -->
+      <div class="cam-feed-container" id="cam-feed-container">
+        <video id="laptop-webcam" playsinline autoplay muted></video>
+        <canvas id="laptop-hand-canvas"></canvas>
+
+        <!-- Steering Overlay Needle -->
+        <div class="cam-steer-overlay">
+          <div class="cam-steer-bar">
+            <div class="cam-deadzone-box"></div>
+            <div class="cam-steer-needle" id="cam-steer-needle"></div>
+          </div>
+        </div>
+
+        <!-- Tracking Loss Warning Overlay -->
+        <div class="cam-loss-overlay" id="cam-loss-overlay">
+          <div class="loss-icon" id="cam-loss-icon">👐</div>
+          <div class="loss-text" id="cam-loss-title">HOLD BOTH HANDS UP</div>
+          <div class="loss-sub" id="cam-loss-desc">Grip the invisible steering wheel</div>
+        </div>
+      </div>
+
+      <!-- Direction & Steer Meter Readout -->
+      <div class="cam-hud-footer">
+        <span class="cam-dir-badge" id="cam-dir-badge">▲ STRAIGHT</span>
+        <span class="cam-steer-readout" id="cam-steer-readout">0°</span>
+      </div>
+    </div>
+    <div class="hud-controller-widget" id="hud-controller-widget">
+      <div class="pill pill-waiting" id="hud-phone-pill">
+        <span class="pulse-dot"></span> 📱 WAITING FOR PHONE
+      </div>
+      <div class="hud-ping-badge">
+        <span>PING:</span>
+        <strong id="hud-phone-ping">--</strong>
+      </div>
+      <div class="gesture-badge" id="hud-gesture-badge">
+        ⌨️ KEYBOARD READY
+      </div>
+
+      <!-- In-Game Collapsible QR Code Box -->
+      <div class="hud-qr-box" id="hud-qr-box">
+        <div class="qr-title">SCAN TO STEER</div>
+        <img id="hud-qr-img" src="" alt="Pairing QR Code">
+        <div class="qr-code-text" id="hud-session-code">GD-XXXX</div>
+      </div>
+    </div>
+
+    <!-- NEAR-MISS COMBO ANNOUNCER POPUP -->
+    <div class="hud-combo-popup" id="hud-combo-popup">
+      <div class="combo-icon">⚡</div>
+      <div class="combo-text" id="hud-combo-text">NEAR MISS! (x2 STREAK)</div>
+      <div class="combo-score" id="hud-combo-score">+250 PTS</div>
+    </div>
+
+    <!-- BOTTOM LEFT: RADAR MINIMAP -->
+    <div class="hud-radar-box">
+      <canvas id="hud-radar-canvas" width="130" height="130"></canvas>
+      <div class="radar-label">PROXIMITY RADAR</div>
+    </div>
+
+    <!-- BOTTOM RIGHT: SPEEDOMETER, TACHOMETER, GEAR & NITRO -->
+    <div class="hud-cluster">
+      
+      <!-- Analog Speedometer Gauge with SVG Dial -->
+      <div class="speedo-box">
+        <svg class="speedo-svg" viewBox="0 0 200 200">
+          <!-- Background arc -->
+          <circle class="speedo-track" cx="100" cy="100" r="75"></circle>
+          <!-- Tachometer RPM dynamic arc -->
+          <circle class="rpm-arc" id="hud-rpm-arc" cx="100" cy="100" r="75"></circle>
+        </svg>
+
+        <!-- Speedometer Needle -->
+        <div class="speedo-needle-anchor" id="hud-speed-needle">
+          <div class="needle-pointer"></div>
+        </div>
+
+        <div class="speedo-center">
+          <div class="speedo-val" id="hud-speed-val">0</div>
+          <div class="speedo-unit">KM/H</div>
+          <div class="rpm-readout"><span id="hud-rpm-val">900</span> RPM</div>
+        </div>
+
+        <!-- Current Gear Display -->
+        <div class="gear-badge">
+          <span class="gear-sub">GEAR</span>
+          <span class="gear-num" id="hud-gear-val">1</span>
+        </div>
+      </div>
+
+      <!-- Nitro Power Meter -->
+      <div class="nitro-box">
+        <div class="nitro-label">
+          <span>⚡ NITRO BOOST</span>
+          <span id="hud-nitro-text">100%</span>
+        </div>
+        <div class="nitro-bar-bg">
+          <div class="nitro-bar-fill" id="hud-nitro-fill" style="width: 100%;"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- COUNTDOWN OVERLAY (3, 2, 1, GO!) -->
+  <div class="countdown-overlay hidden" id="countdown-overlay">
+    <div class="countdown-number" id="countdown-number">3</div>
+  </div>
+
+  <!-- START SCREEN / SHOWROOM / MAIN MENU -->
+  <div class="screen-modal" id="screen-start">
+    <div class="menu-card showroom-card">
+      <div class="menu-header">
+        <div class="brand-title">
+          <span>GESTUREDRIVE</span><span class="neon-glow-x">X</span>
+        </div>
+        <p class="brand-subtitle">AI-POWERED REAL-TIME GESTURE RACING</p>
+      </div>
+
+      <!-- Phone Controller Status Banner -->
+      <div class="phone-banner waiting" id="start-phone-banner">
+        <span>📡 SCAN QR CODE BELOW TO PAIR YOUR PHONE</span>
+      </div>
+
+      <div class="start-main-grid">
+        
+        <!-- Left Column: Customization & Modes -->
+        <div class="start-left-panel">
+          
+          <!-- Vehicle Color Palette -->
+          <div class="section-box">
+            <h4 class="section-title">SUPERCAR PAINT</h4>
+            <div class="color-palette">
+              <button class="color-swatch active" data-color="00f0ff" style="background: #00f0ff;" title="Cyber Cyan"></button>
+              <button class="color-swatch" data-color="bd00ff" style="background: #bd00ff;" title="Neon Purple"></button>
+              <button class="color-swatch" data-color="ff6600" style="background: #ff6600;" title="Hyper Orange"></button>
+              <button class="color-swatch" data-color="ff003c" style="background: #ff003c;" title="Racing Red"></button>
+              <button class="color-swatch" data-color="ffdd00" style="background: #ffdd00;" title="Electric Gold"></button>
+              <button class="color-swatch" data-color="1a1d24" style="background: #1a1d24; border-color: #666;" title="Matte Black"></button>
+            </div>
+          </div>
+
+          <!-- Game Mode Selector -->
+          <div class="section-box">
+            <h4 class="section-title">RACE MODE</h4>
+            <div class="mode-grid">
+              <button class="btn-mode active" data-mode="endless">
+                <span class="mode-name">ENDLESS HIGHWAY</span>
+                <span class="mode-sub">Weave traffic & set records</span>
+              </button>
+              <button class="btn-mode" data-mode="rush">
+                <span class="mode-name">TRAFFIC RUSH</span>
+                <span class="mode-sub">Heavy dynamic congestion</span>
+              </button>
+              <button class="btn-mode" data-mode="time">
+                <span class="mode-name">TIME ATTACK</span>
+                <span class="mode-sub">Beat checkpoint timers</span>
+              </button>
+              <button class="btn-mode" data-mode="free">
+                <span class="mode-name">FREE CRUISE</span>
+                <span class="mode-sub">Relaxed open driving</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Laptop Built-in Webcam Steering Toggle & Sensitivity Box -->
+          <div class="section-box webcam-opt-box">
+            <div class="webcam-opt-header">
+              <h4 class="section-title">💻 LAPTOP WEBCAM STEERING</h4>
+              <button class="btn btn-webcam-toggle active" id="btn-toggle-laptop-webcam">
+                <span class="webcam-status-dot"></span>
+                <span id="btn-webcam-toggle-text">ENABLED</span>
+              </button>
+            </div>
+            <p class="webcam-opt-desc">Grip an invisible steering wheel with both hands in front of your laptop webcam! Tilt left to steer left, tilt right to steer right, level to drive straight. Close fist to brake, Thumbs-up for nitro!</p>
+            <div class="webcam-sens-row">
+              <label for="webcam-sens-slider">Steering Sensitivity: <span id="webcam-sens-val">1.4x</span></label>
+              <input type="range" id="webcam-sens-slider" min="0.6" max="2.4" step="0.1" value="1.4">
+            </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="action-row">
+            <button class="btn btn-primary btn-hero" id="btn-start-race">
+              <span>START RACE</span>
+              <span class="btn-arrow">→</span>
+            </button>
+            <button class="btn btn-secondary" id="btn-open-settings">⚙️ SETTINGS</button>
+            <button class="btn btn-secondary" id="btn-open-guide">📖 CONTROLS</button>
+          </div>
+
+        </div>
+
+        <!-- Right Column: Live QR Code Phone Pairing Hero Card -->
+        <div class="start-right-panel">
+          <div class="qr-hero-card">
+            <div class="qr-badge">PHONE CONTROLLER</div>
+            <h3 class="qr-heading">SCAN TO DRIVE</h3>
+            <p class="qr-desc">Point your phone's camera at this QR code to instantly launch your hand-gesture controller.</p>
+            
+            <div class="qr-img-wrapper">
+              <img id="start-qr-img" src="" alt="Session Pairing QR Code">
+            </div>
+
+            <div class="session-box">
+              <span class="sess-label">PAIRING CODE</span>
+              <span class="sess-code" id="start-session-code">GD-XXXX</span>
+            </div>
+
+            <div class="direct-url-box">
+              <span class="url-label">Direct Link:</span>
+              <span class="url-text" id="start-controller-url">http://...</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="menu-footer">
+        <span>🎮 College Tech Expo Flagship 2026 • Dual Screen Gesture Experience • Full HD</span>
+        <span>Keyboard fallback: [W/A/S/D] or [Arrow Keys] • Space = Brake • Shift = Nitro</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAUSE SCREEN -->
+  <div class="screen-modal hidden" id="screen-pause">
+    <div class="menu-card card-pause">
+      <h2 class="card-title text-cyan">GAME PAUSED</h2>
+      <p class="card-sub">Hold open palm steady on phone or click Resume.</p>
+      <div class="pause-actions">
+        <button class="btn btn-primary btn-large" id="btn-resume">RESUME RACE</button>
+        <button class="btn btn-secondary btn-large" id="btn-restart">RESTART</button>
+        <button class="btn btn-danger btn-large" id="btn-quit">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RACE RESULTS SCREEN -->
+  <div class="screen-modal hidden" id="screen-results">
+    <div class="menu-card card-results">
+      <div class="results-header">
+        <span class="results-badge">RACE COMPLETED</span>
+        <h2 class="results-title">DRIVER PERFORMANCE</h2>
+      </div>
+
+      <div class="results-rank-box">
+        <div class="rank-badge rank-s" id="res-rank">S</div>
+        <div class="rank-label">OVERALL GRADE</div>
+      </div>
+
+      <div class="results-stats-grid">
+        <div class="stat-card">
+          <span class="st-lbl">FINAL SCORE</span>
+          <span class="st-val text-cyan" id="res-score">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="st-lbl">BEST RECORD</span>
+          <span class="st-val text-gold" id="res-best-score">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="st-lbl">TOP SPEED</span>
+          <span class="st-val" id="res-top-speed">0 KM/H</span>
+        </div>
+        <div class="stat-card">
+          <span class="st-lbl">DISTANCE</span>
+          <span class="st-val" id="res-distance">0.00 KM</span>
+        </div>
+        <div class="stat-card">
+          <span class="st-lbl">NEAR MISSES</span>
+          <span class="st-val text-magenta" id="res-near-miss">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="st-lbl">COINS COLLECTED</span>
+          <span class="st-val text-gold" id="res-coins">0</span>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn btn-primary btn-large" id="btn-results-restart">DRIVE AGAIN</button>
+        <button class="btn btn-secondary btn-large" id="btn-results-menu">MAIN MENU</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="screen-modal hidden" id="modal-settings">
+    <div class="menu-card card-settings">
+      <div class="modal-title-row">
+        <h3 class="card-title">SETTINGS & GRAPHICS</h3>
+        <button class="btn-close" id="btn-close-settings">✕</button>
+      </div>
+
+      <div class="setting-item">
+        <label>Graphics Quality</label>
+        <div class="btn-group">
+          <button class="btn btn-quality" data-quality="low">LOW</button>
+          <button class="btn btn-quality" data-quality="medium">MED</button>
+          <button class="btn btn-quality active" data-quality="high">HIGH</button>
+          <button class="btn btn-quality" data-quality="ultra">ULTRA</button>
+        </div>
+      </div>
+
+      <div class="setting-item">
+        <label>Camera Perspective</label>
+        <select id="setting-cam-select" class="form-select">
+          <option value="chase" selected>Chase Cam (3rd Person Dynamic)</option>
+          <option value="hood">Cockpit / Hood Cam (1st Person)</option>
+          <option value="orbit">Showroom Orbit Cam</option>
+        </select>
+      </div>
+
+      <div class="setting-item">
+        <label>Audio & Music</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="setting-audio-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <label>Laptop Webcam Steering</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="setting-webcam-toggle" checked>
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <label>Invert Steering Direction</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="setting-webcam-invert">
+          <span class="slider"></span>
+        </label>
+      </div>
+
+      <div class="setting-item">
+        <label>Webcam Sensitivity (<span id="setting-webcam-sens-label">1.5x</span>)</label>
+        <input type="range" id="setting-webcam-sens" min="0.6" max="2.4" step="0.1" value="1.5" class="slider-input">
+      </div>
+
+      <div class="setting-item">
+        <label>Steering Deadzone (<span id="setting-webcam-deadzone-label">0.05</span>)</label>
+        <input type="range" id="setting-webcam-deadzone" min="0.02" max="0.14" step="0.01" value="0.05" class="slider-input">
+      </div>
+    </div>
+  </div>
+
+  <!-- CONTROLS & HOW TO PLAY MODAL -->
+  <div class="screen-modal hidden" id="modal-guide">
+    <div class="menu-card card-guide">
+      <div class="modal-title-row">
+        <h3 class="card-title text-cyan">HOW TO PLAY</h3>
+        <button class="btn-close" id="btn-close-game-guide">✕</button>
+      </div>
+      <div class="guide-cards-grid">
+        <div class="g-card">
+          <div class="g-symbol">👐 ◀ ▶</div>
+          <h4>TWO-HAND STEERING</h4>
+          <p>Hold both hands like gripping a steering wheel. Tilt left (left hand down) to turn left. Tilt right (right hand down) to turn right!</p>
+        </div>
+        <div class="g-card">
+          <div class="g-symbol">✊</div>
+          <h4>BRAKE</h4>
+          <p>Close either hand into a tight fist to trigger brakes and decelerate quickly.</p>
+        </div>
+        <div class="g-card">
+          <div class="g-symbol">👍</div>
+          <h4>NITRO BOOST</h4>
+          <p>Give a clear Thumbs-Up gesture to fire twin plasma nitro exhaust thrusters!</p>
+        </div>
+        <div class="g-card">
+          <div class="g-symbol">⏸️ / [ESC]</div>
+          <h4>PAUSE</h4>
+          <p>Press [ESC] on keyboard or click the UI Pause button to pause anytime.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
