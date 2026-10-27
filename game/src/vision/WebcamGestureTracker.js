@@ -415,17 +415,16 @@ export class WebcamGestureTracker {
     this.rawSteer = 0.0;
   }
 
-  // --- RENDERING HUD OVERLAYS ---
+  // --- RENDERING HUD OVERLAYS (Black & Red Motorsport Aesthetic) ---
 
   _renderSteeringWheelHUD(hand9, hand3, w, h) {
     const ctx = this.ctx;
 
-    // Draw hand skeletons (Left: Cyan/Pink, Right: Green/Gold)
-    this._drawHandBones(ctx, hand9.landmarks, w, h, '#00f0ff', '#ff0077');
-    this._drawHandBones(ctx, hand3.landmarks, w, h, '#00ff66', '#ffd700');
+    // Draw hand skeletons (Left: Racing Red/White, Right: Crimson/White)
+    this._drawHandBones(ctx, hand9.landmarks, w, h, '#ff1133', '#ffffff');
+    this._drawHandBones(ctx, hand3.landmarks, w, h, '#ff4466', '#ffffff');
 
     // Canvas buffer is visually flipped horizontally by CSS scaleX(-1)
-    // Left hand in canvas buffer is drawn at hand9.rawX * w
     const lx = hand9.rawX * w;
     const ly = hand9.rawY * h;
     const rx = hand3.rawX * w;
@@ -441,9 +440,9 @@ export class WebcamGestureTracker {
     ctx.beginPath();
     ctx.arc(midX, midY, wheelRadius, 0, Math.PI * 2);
     ctx.lineWidth = 4;
-    ctx.strokeStyle = Math.abs(this.smoothedSteer) > 0.15 ? '#00f0ff' : 'rgba(0, 240, 255, 0.4)';
-    ctx.shadowColor = '#00f0ff';
-    ctx.shadowBlur = 8;
+    ctx.strokeStyle = Math.abs(this.smoothedSteer) > 0.15 ? '#ff1133' : 'rgba(255, 17, 51, 0.45)';
+    ctx.shadowColor = '#ff1133';
+    ctx.shadowBlur = 10;
     ctx.stroke();
 
     // 2. Wheel Crossbar Spoke (connecting 9h and 3h grips)
@@ -451,29 +450,29 @@ export class WebcamGestureTracker {
     ctx.moveTo(lx, ly);
     ctx.lineTo(rx, ry);
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.stroke();
 
-    // 3. 9 o'clock & 3 o'clock Grip Badges (Flipped locally so CSS scaleX(-1) renders them unmirrored)
+    // 3. 9 o'clock & 3 o'clock Grip Badges
     ctx.font = 'bold 11px sans-serif';
     ctx.save();
     ctx.translate(lx, ly - 14);
     ctx.scale(-1, 1);
-    ctx.fillStyle = '#00f0ff';
+    ctx.fillStyle = '#ff1133';
     ctx.fillText('9h', -8, 0);
     ctx.restore();
 
     ctx.save();
     ctx.translate(rx, ry - 14);
     ctx.scale(-1, 1);
-    ctx.fillStyle = '#00ff66';
+    ctx.fillStyle = '#ffffff';
     ctx.fillText('3h', -8, 0);
     ctx.restore();
 
     // 4. Center Wheel Hub
     ctx.beginPath();
     ctx.arc(midX, midY, 9, 0, Math.PI * 2);
-    ctx.fillStyle = this.smoothedSteer < -0.15 ? '#ff0077' : (this.smoothedSteer > 0.15 ? '#00ff66' : '#ffd700');
+    ctx.fillStyle = this.smoothedSteer < -0.15 ? '#ff1133' : (this.smoothedSteer > 0.15 ? '#ff4466' : '#ffffff');
     ctx.shadowBlur = 10;
     ctx.fill();
 
@@ -485,7 +484,6 @@ export class WebcamGestureTracker {
     ctx.save();
 
     // Canvas element has CSS scaleX(-1). We reflect across canvas width w
-    // so text renders crisp, normal, and left-aligned on the user's screen!
     ctx.setTransform(-1, 0, 0, 1, w, 0);
 
     const padX = 8;
@@ -493,19 +491,19 @@ export class WebcamGestureTracker {
     const boxW = 210;
     const boxH = 96;
 
-    // Dark high-contrast telemetry background
-    ctx.fillStyle = 'rgba(5, 8, 16, 0.88)';
+    // Obsidian Matte Black telemetry background
+    ctx.fillStyle = 'rgba(10, 10, 14, 0.92)';
     ctx.fillRect(padX, padY, boxW, boxH);
-    ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
+    ctx.strokeStyle = 'rgba(255, 17, 51, 0.55)';
     ctx.lineWidth = 1;
     ctx.strokeRect(padX, padY, boxW, boxH);
 
     ctx.font = 'bold 9px monospace';
-    ctx.fillStyle = '#00f0ff';
+    ctx.fillStyle = '#ff1133';
     ctx.fillText('GESTUREDRIVE TELEMETRY', padX + 8, padY + 14);
 
     ctx.font = '9px monospace';
-    ctx.fillStyle = '#aaa';
+    ctx.fillStyle = '#a0a0b0';
 
     // Line 1: Hands & FPS
     const handsLabel = this.detectedHandsCount >= 2 ? '2 (9h & 3h Grip)' : (this.detectedHandsCount === 1 ? '1 Hand' : '0 Hands');
@@ -521,19 +519,19 @@ export class WebcamGestureTracker {
 
     // Line 4: Final Vehicle Action
     let dirText = '▲ STRAIGHT';
-    ctx.fillStyle = '#ffd700';
+    ctx.fillStyle = '#ffffff';
     if (this.smoothedSteer < -0.15) {
       dirText = '◀ STEER LEFT';
-      ctx.fillStyle = '#ffaa00';
+      ctx.fillStyle = '#ff1133';
     } else if (this.smoothedSteer > 0.15) {
       dirText = '▶ STEER RIGHT';
-      ctx.fillStyle = '#00ff66';
+      ctx.fillStyle = '#ff4466';
     }
     const invLabel = this.invertSteering ? '[INV]' : '';
     ctx.fillText(`Action: ${dirText} ${invLabel}`, padX + 8, padY + 70);
 
     // Line 5: Inference Latency
-    ctx.fillStyle = '#888';
+    ctx.fillStyle = '#777788';
     ctx.fillText(`Latency: ${this.inferenceLatencyMs}ms (Throttled 32fps)`, padX + 8, padY + 84);
 
     ctx.restore();

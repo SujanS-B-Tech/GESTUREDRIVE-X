@@ -1,11 +1,11 @@
 /**
- * GESTUREDRIVE X — Main Racing Game Coordinator
- * Integrates 3D Engine, Car Physics, Procedural Track, Traffic AI, Web Audio, Networking & Menus
+ * GESTUREDRIVE X — Main PC Racing Game Coordinator
+ * Integrates 3D Graphics Engine, Supercar Physics, Procedural Track, Traffic AI,
+ * Web Audio Synthesis, Laptop Webcam AI Gesture Steering & Motorsport Menus.
  */
 
 import { Engine } from './core/Engine.js';
 import { AudioManager } from './core/AudioManager.js';
-import { NetworkClient } from './core/NetworkClient.js';
 import { Car } from './game/Car.js';
 import { Track } from './game/Track.js';
 import { TrafficManager } from './game/Traffic.js';
@@ -21,25 +21,25 @@ class GameApp {
     // Subsystems
     this.engine = new Engine(this.container);
     this.audio = new AudioManager();
-    this.network = new NetworkClient();
     this.hud = new HUD();
     this.particles = new ParticleSystem(this.engine.scene);
     this.track = new Track(this.engine.scene);
     this.traffic = new TrafficManager(this.engine.scene);
-    this.car = new Car(this.engine.scene, 0x00f0ff);
+    this.car = new Car(this.engine.scene, 0xff1133); // Racing Red Supercar
 
     // Laptop Webcam Hand Gesture Tracker
     const webcamVideo = document.getElementById('laptop-webcam');
     const webcamCanvas = document.getElementById('laptop-hand-canvas');
     this.webcamTracker = new WebcamGestureTracker(webcamVideo, webcamCanvas, {
-      deadzone: 0.06,
+      deadzone: 0.04,
       sensitivity: 1.4,
-      smoothingFactor: 0.35
+      smoothingFactor: 0.35,
+      targetFps: 32
     });
     this.webcamEnabled = true;
 
-    // Game State: 'MENU' | 'COUNTDOWN' | 'RACING' | 'PAUSED' | 'RESULTS'
-    this.state = 'MENU';
+    // Game State: 'SPLASH' | 'MENU' | 'GARAGE' | 'COUNTDOWN' | 'RACING' | 'PAUSED' | 'RESULTS'
+    this.state = 'SPLASH';
     this.gameMode = 'endless';
 
     // Race Statistics
@@ -56,7 +56,8 @@ class GameApp {
     this.keys = {
       ArrowLeft: false, ArrowRight: false, ArrowUp: false, ArrowDown: false,
       KeyA: false, KeyD: false, KeyW: false, KeyS: false,
-      Space: false, ShiftLeft: false, ShiftRight: false
+      Space: false, ShiftLeft: false, ShiftRight: false,
+      KeyR: false, KeyC: false
     };
 
     // Camera Modes
@@ -71,7 +72,6 @@ class GameApp {
     this.lastTime = performance.now();
 
     this._setupMenus();
-    this._setupNetwork();
     this._setupKeyboard();
     this._setupWebcamControls();
 
@@ -84,6 +84,13 @@ class GameApp {
 
   _setupMenus() {
     this.menus = new Menus({
+      onSplashDismissed: () => {
+        this.state = 'MENU';
+        this.menus.showStartScreen();
+        this.audio.init();
+        this.audio.resume();
+        this.audio.startMenuMusic();
+      },
       onStartRace: (mode) => this.startRace(mode),
       onResume: () => this.resumeRace(),
       onRestart: () => this.restartRace(),
@@ -91,37 +98,28 @@ class GameApp {
       onColorChange: (hex) => this.car.setColor(hex),
       onQualityChange: (quality) => this.engine.setQuality(quality),
       onCameraChange: (cam) => { this.engine.cameraMode = cam; },
-      onMuteToggle: (unmuted) => this.audio.setMuted(!unmuted),
+      onVolumeChange: (vol) => {
+        this.audio.masterVolume = vol;
+        if (this.audio.masterGain) this.audio.masterGain.gain.value = vol;
+      },
+      onGarageOpened: () => {
+        this.state = 'GARAGE';
+        this.engine.cameraMode = 'orbit';
+      },
+      onGarageClosed: () => {
+        this.state = 'MENU';
+        this.engine.cameraMode = 'orbit';
+      },
       onBeep: (isHigh) => this.audio.playBeep(isHigh)
     });
 
-    this.menus.showStartScreen();
-  }
-
-  _setupNetwork() {
-    this.network.onSessionCreated = (info) => {
-      this.hud.setPairingInfo(info.sessionCode, info.qrCode);
-      this.menus.setPairingInfo(info.sessionCode, info.controllerUrl, info.qrCode);
-    };
-
-    this.network.onControllerConnect = (device) => {
-      this.menus.setPhoneConnected(true, device.deviceInfo);
-    };
-
-    this.network.onControllerDisconnect = () => {
-      this.menus.setPhoneConnected(false);
-    };
-
-    this.network.onCommand = (action, val) => {
-      if (action === 'TOGGLE_PAUSE') {
+    // Pause button in HUD
+    if (this.hud.btnPause) {
+      this.hud.btnPause.addEventListener('click', () => {
         if (this.state === 'RACING') this.pauseRace();
         else if (this.state === 'PAUSED') this.resumeRace();
-      } else if (action === 'START_RACE') {
-        if (this.state === 'MENU') this.startRace(this.gameMode);
-      }
-    };
-
-    this.network.connect();
+      });
+    }
   }
 
   _setupKeyboard() {
@@ -133,6 +131,10 @@ class GameApp {
       if (e.code === 'Escape') {
         if (this.state === 'RACING') this.pauseRace();
         else if (this.state === 'PAUSED') this.resumeRace();
+      }
+      if (e.code === 'KeyR' && this.state === 'RACING') {
+        // Instant vehicle recovery
+        this.car.resetPosition();
       }
       if (e.code === 'KeyC') {
         // Cycle camera mode
@@ -159,33 +161,22 @@ class GameApp {
   }
 
   _setupWebcamControls() {
-    const btnStartWebcamToggle = document.getElementById('btn-toggle-laptop-webcam');
-    const btnStartToggleText = document.getElementById('btn-webcam-toggle-text');
     const btnHudToggle = document.getElementById('btn-hud-cam-toggle');
     const btnHudCalibrate = document.getElementById('btn-hud-cam-calibrate');
     const btnHudInvert = document.getElementById('btn-hud-cam-invert');
-    const sensSlider = document.getElementById('webcam-sens-slider');
-    const sensVal = document.getElementById('webcam-sens-val');
     const settingToggle = document.getElementById('setting-webcam-toggle');
     const settingInvert = document.getElementById('setting-webcam-invert');
     const settingSens = document.getElementById('setting-webcam-sens');
     const settingSensLabel = document.getElementById('setting-webcam-sens-label');
     const settingDeadzone = document.getElementById('setting-webcam-deadzone');
     const settingDeadzoneLabel = document.getElementById('setting-webcam-deadzone-label');
+    const settingCalibrate = document.getElementById('setting-webcam-calibrate');
 
     const updateToggleUI = () => {
       if (this.webcamEnabled) {
-        if (btnStartWebcamToggle) {
-          btnStartWebcamToggle.className = 'btn btn-webcam-toggle active';
-          if (btnStartToggleText) btnStartToggleText.textContent = 'ENABLED';
-        }
         if (btnHudToggle) btnHudToggle.className = 'btn-hud-icon active';
         if (settingToggle) settingToggle.checked = true;
       } else {
-        if (btnStartWebcamToggle) {
-          btnStartWebcamToggle.className = 'btn btn-webcam-toggle';
-          if (btnStartToggleText) btnStartToggleText.textContent = 'DISABLED';
-        }
         if (btnHudToggle) btnHudToggle.className = 'btn-hud-icon';
         if (settingToggle) settingToggle.checked = false;
       }
@@ -206,7 +197,6 @@ class GameApp {
       }
     };
 
-    if (btnStartWebcamToggle) btnStartWebcamToggle.addEventListener('click', toggleWebcam);
     if (btnHudToggle) btnHudToggle.addEventListener('click', toggleWebcam);
     if (settingToggle) settingToggle.addEventListener('change', (e) => {
       if (e.target.checked !== this.webcamEnabled) toggleWebcam();
@@ -214,6 +204,11 @@ class GameApp {
 
     if (btnHudCalibrate) {
       btnHudCalibrate.addEventListener('click', () => {
+        this.webcamTracker.calibrate();
+      });
+    }
+    if (settingCalibrate) {
+      settingCalibrate.addEventListener('click', () => {
         this.webcamTracker.calibrate();
       });
     }
@@ -244,13 +239,10 @@ class GameApp {
     const onSensChange = (val) => {
       const num = parseFloat(val);
       this.webcamTracker.setSensitivity(num);
-      if (sensVal) sensVal.textContent = `${num.toFixed(1)}x`;
       if (settingSensLabel) settingSensLabel.textContent = `${num.toFixed(1)}x`;
-      if (sensSlider) sensSlider.value = num;
       if (settingSens) settingSens.value = num;
     };
 
-    if (sensSlider) sensSlider.addEventListener('input', (e) => onSensChange(e.target.value));
     if (settingSens) settingSens.addEventListener('input', (e) => onSensChange(e.target.value));
 
     if (settingDeadzone) {
@@ -261,7 +253,6 @@ class GameApp {
       });
     }
 
-    // Initialize UI states from tracker settings immediately
     updateToggleUI();
     updateInvertUI();
 
@@ -270,7 +261,7 @@ class GameApp {
       if (this.webcamEnabled && !this.webcamTracker.isActive) {
         this.webcamTracker.start().catch(() => {});
       }
-    }, 400);
+    }, 500);
   }
 
   startRace(mode = 'endless') {
@@ -284,7 +275,6 @@ class GameApp {
     this.hud.show();
     this.engine.cameraMode = 'chase';
 
-    // Start webcam if enabled and not already running
     if (this.webcamEnabled && !this.webcamTracker.isActive) {
       this.webcamTracker.start().catch((err) => console.warn('Webcam start notice:', err));
     }
@@ -368,10 +358,7 @@ class GameApp {
     // 1. Laptop Webcam Hand Gesture Tracker Input
     const webcamInput = (this.webcamEnabled && this.webcamTracker) ? this.webcamTracker.getInput() : null;
 
-    // 2. Phone Controller Input
-    const phoneInput = this.network.getInput();
-
-    // 3. Keyboard Input
+    // 2. Keyboard Input
     let kbSteer = 0.0;
     if (this.keys.ArrowLeft || this.keys.KeyA) kbSteer -= 1.0;
     if (this.keys.ArrowRight || this.keys.KeyD) kbSteer += 1.0;
@@ -380,8 +367,7 @@ class GameApp {
     let kbBrake = (this.keys.ArrowDown || this.keys.KeyS || this.keys.Space) ? 1.0 : 0.0;
     let kbNitro = this.keys.ShiftLeft || this.keys.ShiftRight;
 
-    // Input Merge Strategy:
-    // Priority 1: Physical Keyboard overrides immediately if pressed
+    // Priority 1: Physical Keyboard overrides immediately for testing/emergencies
     const hasKeyboardInput = kbSteer !== 0 || kbThrottle > 0 || kbBrake > 0 || kbNitro;
 
     if (hasKeyboardInput) {
@@ -401,24 +387,15 @@ class GameApp {
         nitro: webcamInput.nitro,
         source: 'webcam'
       };
-    } else if (this.network.isPhoneConnected && phoneInput.handVisible) {
-      // Priority 3: Phone Gesture Controller
-      return {
-        steer: phoneInput.steer,
-        throttle: (this.state === 'RACING') ? phoneInput.throttle : 0.0,
-        brake: phoneInput.brake,
-        nitro: phoneInput.nitro,
-        source: 'phone'
-      };
     } else {
       // Safe neutral cruise / coasting
       const neutralSteer = (webcamInput && webcamInput.active) ? webcamInput.steer : 0.0;
       return {
         steer: neutralSteer,
-        throttle: (this.state === 'RACING' && this.network.isPhoneConnected) ? 0.7 : 0.0,
+        throttle: 0.0,
         brake: 0.0,
         nitro: false,
-        source: 'none'
+        source: 'neutral'
       };
     }
   }
@@ -433,7 +410,7 @@ class GameApp {
     // 2. State-Specific Updates
     if (this.state === 'RACING') {
       this._updateRacing(delta, input);
-    } else if (this.state === 'MENU') {
+    } else if (this.state === 'MENU' || this.state === 'GARAGE') {
       // Showroom Idle Attract Mode
       if (currentTime - this.lastInteractionTime > this.idleThreshold) {
         this.engine.cameraMode = 'orbit';
@@ -479,13 +456,11 @@ class GameApp {
     this.track.checkPickups(
       this.car.mesh.position,
       () => {
-        // Coin collected
         this.coins++;
         this.score += 200;
         this.audio.playCoinSound();
       },
       () => {
-        // Nitro canister collected
         this.car.nitroCharge = Math.min(100, this.car.nitroCharge + 40);
         this.score += 150;
         this.audio.playCoinSound();
@@ -497,7 +472,6 @@ class GameApp {
       delta,
       this.car,
       (trafficCar, impact) => {
-        // Traffic Collision
         this.audio.playCrash();
         this.particles.spawnSparks(
           { x: impact.impactX, y: 0.8, z: impact.impactZ },
@@ -506,7 +480,6 @@ class GameApp {
         this.nearMissStreak = 0; // Break streak
       },
       (trafficCar) => {
-        // Near Miss Bonus!
         this.nearMisses++;
         this.nearMissStreak++;
         const bonusPoints = 250 * this.nearMissStreak;
@@ -549,7 +522,6 @@ class GameApp {
     this.hud.update(
       this.car,
       this.traffic,
-      this.network,
       this.score,
       this.distance,
       this.highScore,

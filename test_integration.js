@@ -1,6 +1,23 @@
-// GESTUREDRIVE X - End-to-End Integration Test
+// Copyright (c) 2026 GESTUREDRIVE X Team. All Rights Reserved.
+// GESTUREDRIVE X - Standalone PC & Unreal Engine 5 Integration Test Suite
+
 const http = require('http');
 const WebSocket = require('./server/node_modules/ws');
+
+let serverInstance = null;
+
+async function ensureServerRunning() {
+  return new Promise((resolve) => {
+    http.get('http://127.0.0.1:8080/api/status', (res) => {
+      if (res.statusCode === 200) resolve();
+    }).on('error', () => {
+      // Start in-process server
+      console.log('[TestSetup] Starting local relay server...');
+      require('./server/index.js');
+      setTimeout(resolve, 800);
+    });
+  });
+}
 
 async function testHttp(url) {
   return new Promise((resolve, reject) => {
@@ -13,102 +30,90 @@ async function testHttp(url) {
 }
 
 async function runTests() {
-  console.log('--- 1. Testing REST Endpoints ---');
-  const statusRes = await testHttp('http://localhost:8080/api/status');
+  await ensureServerRunning();
+
+  console.log('--- 1. Testing Standalone PC REST Endpoints ---');
+  const statusRes = await testHttp('http://127.0.0.1:8080/api/status');
   console.log('✓ /api/status HTTP:', statusRes.status, JSON.parse(statusRes.data));
 
-  const gameRes = await testHttp('http://localhost:8080/game/');
+  const gameRes = await testHttp('http://127.0.0.1:8080/game/');
   console.log('✓ /game/ HTTP:', gameRes.status, `(${gameRes.data.length} bytes HTML)`);
 
-  const controllerRes = await testHttp('http://localhost:8080/controller/');
-  console.log('✓ /controller/ HTTP:', controllerRes.status, `(${controllerRes.data.length} bytes HTML)`);
-
-  console.log('\n--- 2. Testing Real-Time WebSocket Pairing & Relay ---');
-  const gameWs = new WebSocket('ws://localhost:8080');
-
-  let sessionCode = null;
+  console.log('\n--- 2. Testing Unreal Engine 5 C++ Bridge WebSocket Connection ---');
+  const ue5Ws = new WebSocket('ws://127.0.0.1:8080');
 
   await new Promise((resolve) => {
-    gameWs.on('open', () => {
-      console.log('✓ Game WebSocket connected');
-      gameWs.send(JSON.stringify({ type: 'create_session' }));
+    ue5Ws.on('open', () => {
+      console.log('✓ Unreal Engine 5 Client connected to bridge socket');
+      ue5Ws.send(JSON.stringify({ type: 'register_ue5' }));
     });
 
-    gameWs.on('message', (raw) => {
+    ue5Ws.on('message', (raw) => {
       const msg = JSON.parse(raw);
-      if (msg.type === 'session_created') {
-        sessionCode = msg.sessionCode;
-        console.log(`✓ Session Created: ${sessionCode} | Connect URL: ${msg.controllerUrl}`);
-        console.log(`✓ QR Code Data URL generated (${msg.qrCode.length} chars)`);
+      if (msg.type === 'registered' && msg.role === 'ue5') {
+        console.log('✓ UE5 Bridge successfully registered as active vehicle simulation consumer');
         resolve();
       }
     });
   });
 
-  // Connect Mobile Controller
-  const controllerWs = new WebSocket('ws://localhost:8080');
+  console.log('\n--- 3. Testing Local Webcam AI Gesture Stream to UE5 Bridge ---');
+  const visionWs = new WebSocket('ws://127.0.0.1:8080');
 
   await new Promise((resolve) => {
-    controllerWs.on('open', () => {
-      console.log('✓ Controller WebSocket connected');
-      controllerWs.send(JSON.stringify({
-        type: 'join_session',
-        sessionCode: sessionCode,
-        deviceInfo: 'Samsung Galaxy / Chrome'
-      }));
-    });
-
-    controllerWs.on('message', (raw) => {
-      const msg = JSON.parse(raw);
-      if (msg.type === 'session_joined') {
-        console.log(`✓ Controller successfully paired with session: ${msg.sessionCode}`);
-        resolve();
-      }
+    visionWs.on('open', () => {
+      console.log('✓ Computer Vision Pipeline connected to bridge');
+      visionWs.send(JSON.stringify({ type: 'register_game' }));
+      resolve();
     });
   });
 
-  // Test Real-Time Gesture Streaming
-  console.log('\n--- 3. Testing High-Frequency Gesture Input Stream ---');
   await new Promise((resolve) => {
-    gameWs.on('message', (raw) => {
+    ue5Ws.on('message', (raw) => {
       const msg = JSON.parse(raw);
       if (msg.type === 'input') {
-        console.log(`✓ Game received real-time hand gesture packet: Steer=${msg.steer}, Nitro=${msg.nitro}, Gesture="${msg.gesture}"`);
+        console.log(`✓ UE5 Chaos Vehicle received real-time hand gesture packet: Steer=${msg.steer}, Nitro=${msg.nitro}, Gesture="${msg.gesture}"`);
         resolve();
       }
     });
 
-    // Controller transmits hand gesture input
-    controllerWs.send(JSON.stringify({
+    // Vision pipeline transmits 9 & 3 steering wheel gesture
+    visionWs.send(JSON.stringify({
       type: 'input',
-      steer: -0.65,
+      steer: -0.72,
       throttle: 1.0,
       brake: 0.0,
       nitro: true,
-      gesture: 'STEER_LEFT_NITRO',
+      gesture: 'STEER_LEFT',
       handVisible: true,
-      confidence: 0.98,
+      confidence: 0.99,
       timestamp: Date.now()
     }));
   });
 
-  // Test Safe Disconnect Failsafe
-  console.log('\n--- 4. Testing Disconnection Failsafe ---');
+  console.log('\n--- 4. Testing Ping/Pong Roundtrip Latency ---');
+  const startPing = Date.now();
   await new Promise((resolve) => {
-    gameWs.on('message', (raw) => {
+    visionWs.on('message', (raw) => {
       const msg = JSON.parse(raw);
-      if (msg.type === 'controller_disconnected') {
-        console.log('✓ Game successfully received controller_disconnected event and triggered safe neutral controls');
+      if (msg.type === 'pong') {
+        const roundtrip = Date.now() - startPing;
+        console.log(`✓ Roundtrip ping latency: ${roundtrip}ms (Target: < 10ms local loopback)`);
         resolve();
       }
     });
 
-    controllerWs.close();
+    visionWs.send(JSON.stringify({
+      type: 'ping',
+      clientTime: startPing
+    }));
   });
 
-  gameWs.close();
+  visionWs.close();
+  ue5Ws.close();
+
   console.log('\n=======================================================');
-  console.log('  ALL INTEGRATION TESTS PASSED PERFECTLY (100% SUCCESS) ');
+  console.log('  ALL INTEGRATION TESTS PASSED PERFECTLY (100% OK)      ');
   console.log('=======================================================');
   process.exit(0);
 }

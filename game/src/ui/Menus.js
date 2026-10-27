@@ -1,14 +1,18 @@
 /**
  * GESTUREDRIVE X - Menus & Modal Screens Manager
- * Start screen, Car Color Selector, Mode Selection, Pause Menu, Results Screen, and Settings
+ * Controls Splash, Main Menu, Garage Customizer, Settings, Controls Guide, Pause, and Results.
  */
 
 export class Menus {
   constructor(callbacks = {}) {
     this.callbacks = callbacks;
 
-    // Screens
+    // Screens & Modals
+    this.splashScreen = document.getElementById('screen-splash');
+    this.splashFill = document.getElementById('splash-loader-fill');
+    this.splashPrompt = document.getElementById('splash-press-prompt');
     this.startScreen = document.getElementById('screen-start');
+    this.garageScreen = document.getElementById('screen-garage');
     this.pauseScreen = document.getElementById('screen-pause');
     this.resultsScreen = document.getElementById('screen-results');
     this.settingsModal = document.getElementById('modal-settings');
@@ -16,18 +20,26 @@ export class Menus {
     this.countdownOverlay = document.getElementById('countdown-overlay');
     this.countdownNumber = document.getElementById('countdown-number');
 
-    // Start Screen Elements
+    // Main Menu Buttons
     this.btnStartRace = document.getElementById('btn-start-race');
+    this.btnOpenGarage = document.getElementById('btn-open-garage');
     this.btnOpenSettings = document.getElementById('btn-open-settings');
     this.btnOpenGuide = document.getElementById('btn-open-guide');
-    this.startQrImg = document.getElementById('start-qr-img');
-    this.startSessionCode = document.getElementById('start-session-code');
-    this.startControllerUrl = document.getElementById('start-controller-url');
-    this.phonePairBanner = document.getElementById('start-phone-banner');
+    this.btnExitGame = document.getElementById('btn-exit-game');
+
+    // Garage Controls
+    this.btnCloseGarage = document.getElementById('btn-close-garage');
+    this.btnGarageRace = document.getElementById('btn-garage-race');
+    this.colorSwatches = document.querySelectorAll('.color-swatch');
+
+    // Mode Buttons
+    this.modeButtons = document.querySelectorAll('.btn-mode-tab');
+    this.selectedMode = 'endless';
 
     // Pause Screen Elements
     this.btnResume = document.getElementById('btn-resume');
     this.btnRestart = document.getElementById('btn-restart');
+    this.btnPauseSettings = document.getElementById('btn-pause-settings');
     this.btnQuit = document.getElementById('btn-quit');
 
     // Results Screen Elements
@@ -41,20 +53,76 @@ export class Menus {
     this.resCoins = document.getElementById('res-coins');
     this.resRank = document.getElementById('res-rank');
 
-    // Color Swatches
-    this.colorSwatches = document.querySelectorAll('.color-swatch');
+    // Settings Controls
+    this.btnCloseSettings = document.getElementById('btn-close-settings');
+    this.btnSaveSettings = document.getElementById('btn-save-settings');
+    this.qualityButtons = document.querySelectorAll('.btn-quality');
+    this.camButtons = document.querySelectorAll('.btn-cam-opt');
+    this.settingFullscreen = document.getElementById('setting-fullscreen');
+    this.volumeSlider = document.getElementById('setting-volume-slider');
+    this.volumeVal = document.getElementById('setting-volume-val');
 
-    // Mode Buttons
-    this.modeButtons = document.querySelectorAll('.btn-mode');
-    this.selectedMode = 'endless';
+    // Controls Guide
+    this.btnCloseGuide = document.getElementById('btn-close-guide');
+    this.btnCloseGuideAction = document.getElementById('btn-close-guide-action');
+
+    this.countdownTimer = null;
 
     this._bindEvents();
+    this._initSplashScreen();
+  }
+
+  _initSplashScreen() {
+    if (!this.splashScreen) return;
+
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 20;
+      if (this.splashFill) this.splashFill.style.width = `${progress}%`;
+
+      if (progress >= 100) {
+        clearInterval(interval);
+        if (this.splashPrompt) this.splashPrompt.classList.remove('hidden');
+
+        const dismissSplash = () => {
+          this.splashScreen.classList.add('hidden');
+          window.removeEventListener('keydown', dismissSplash);
+          window.removeEventListener('pointerdown', dismissSplash);
+          if (this.callbacks.onSplashDismissed) this.callbacks.onSplashDismissed();
+        };
+
+        window.addEventListener('keydown', dismissSplash, { once: true });
+        window.addEventListener('pointerdown', dismissSplash, { once: true });
+      }
+    }, 120);
   }
 
   _bindEvents() {
     // Start Race
     if (this.btnStartRace) {
       this.btnStartRace.addEventListener('click', () => {
+        if (this.callbacks.onStartRace) this.callbacks.onStartRace(this.selectedMode);
+      });
+    }
+
+    // Garage Open & Close
+    if (this.btnOpenGarage) {
+      this.btnOpenGarage.addEventListener('click', () => {
+        this.hideAll();
+        if (this.garageScreen) this.garageScreen.classList.remove('hidden');
+        if (this.callbacks.onGarageOpened) this.callbacks.onGarageOpened();
+      });
+    }
+    if (this.btnCloseGarage) {
+      this.btnCloseGarage.addEventListener('click', () => {
+        if (this.garageScreen) this.garageScreen.classList.add('hidden');
+        this.showStartScreen();
+        if (this.callbacks.onGarageClosed) this.callbacks.onGarageClosed();
+      });
+    }
+    if (this.btnGarageRace) {
+      this.btnGarageRace.addEventListener('click', () => {
+        if (this.garageScreen) this.garageScreen.classList.add('hidden');
         if (this.callbacks.onStartRace) this.callbacks.onStartRace(this.selectedMode);
       });
     }
@@ -69,7 +137,7 @@ export class Menus {
       });
     });
 
-    // Mode Selection
+    // Mode Selection Tabs
     this.modeButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         this.modeButtons.forEach(b => b.classList.remove('active'));
@@ -77,6 +145,94 @@ export class Menus {
         this.selectedMode = btn.dataset.mode;
       });
     });
+
+    // Settings Modal
+    if (this.btnOpenSettings) {
+      this.btnOpenSettings.addEventListener('click', () => {
+        if (this.settingsModal) this.settingsModal.classList.remove('hidden');
+      });
+    }
+    if (this.btnPauseSettings) {
+      this.btnPauseSettings.addEventListener('click', () => {
+        if (this.settingsModal) this.settingsModal.classList.remove('hidden');
+      });
+    }
+    if (this.btnCloseSettings) {
+      this.btnCloseSettings.addEventListener('click', () => {
+        if (this.settingsModal) this.settingsModal.classList.add('hidden');
+      });
+    }
+    if (this.btnSaveSettings) {
+      this.btnSaveSettings.addEventListener('click', () => {
+        if (this.settingsModal) this.settingsModal.classList.add('hidden');
+      });
+    }
+
+    // Quality buttons
+    this.qualityButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.qualityButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (this.callbacks.onQualityChange) this.callbacks.onQualityChange(btn.dataset.quality);
+      });
+    });
+
+    // Camera buttons
+    this.camButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.camButtons.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        if (this.callbacks.onCameraChange) this.callbacks.onCameraChange(btn.dataset.cam);
+      });
+    });
+
+    // Fullscreen toggle
+    if (this.settingFullscreen) {
+      this.settingFullscreen.addEventListener('change', (e) => {
+        if (e.target.checked) {
+          if (document.documentElement.requestFullscreen) {
+            document.documentElement.requestFullscreen().catch(() => {});
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+          }
+        }
+      });
+    }
+
+    // Volume Slider
+    if (this.volumeSlider) {
+      this.volumeSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value, 10);
+        if (this.volumeVal) this.volumeVal.textContent = `${val}%`;
+        if (this.callbacks.onVolumeChange) this.callbacks.onVolumeChange(val / 100);
+      });
+    }
+
+    // Controls Guide Modal
+    if (this.btnOpenGuide) {
+      this.btnOpenGuide.addEventListener('click', () => {
+        if (this.guideModal) this.guideModal.classList.remove('hidden');
+      });
+    }
+    if (this.btnCloseGuide) {
+      this.btnCloseGuide.addEventListener('click', () => {
+        if (this.guideModal) this.guideModal.classList.add('hidden');
+      });
+    }
+    if (this.btnCloseGuideAction) {
+      this.btnCloseGuideAction.addEventListener('click', () => {
+        if (this.guideModal) this.guideModal.classList.add('hidden');
+      });
+    }
+
+    // Exit Game
+    if (this.btnExitGame) {
+      this.btnExitGame.addEventListener('click', () => {
+        if (window.close) window.close();
+      });
+    }
 
     // Pause Controls
     if (this.btnResume) {
@@ -106,75 +262,6 @@ export class Menus {
         if (this.callbacks.onQuit) this.callbacks.onQuit();
       });
     }
-
-    // Settings Modal
-    if (this.btnOpenSettings) {
-      this.btnOpenSettings.addEventListener('click', () => {
-        if (this.settingsModal) this.settingsModal.classList.remove('hidden');
-      });
-    }
-    const btnCloseSettings = document.getElementById('btn-close-settings');
-    if (btnCloseSettings) {
-      btnCloseSettings.addEventListener('click', () => {
-        if (this.settingsModal) this.settingsModal.classList.add('hidden');
-      });
-    }
-
-    // Guide Modal
-    if (this.btnOpenGuide) {
-      this.btnOpenGuide.addEventListener('click', () => {
-        if (this.guideModal) this.guideModal.classList.remove('hidden');
-      });
-    }
-    const btnCloseGuide = document.getElementById('btn-close-game-guide');
-    if (btnCloseGuide) {
-      btnCloseGuide.addEventListener('click', () => {
-        if (this.guideModal) this.guideModal.classList.add('hidden');
-      });
-    }
-
-    // Graphics Preset Buttons
-    document.querySelectorAll('.btn-quality').forEach(btn => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('.btn-quality').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        if (this.callbacks.onQualityChange) this.callbacks.onQualityChange(btn.dataset.quality);
-      });
-    });
-
-    // Camera Mode Select in Settings
-    const camSelect = document.getElementById('setting-cam-select');
-    if (camSelect) {
-      camSelect.addEventListener('change', (e) => {
-        if (this.callbacks.onCameraChange) this.callbacks.onCameraChange(e.target.value);
-      });
-    }
-
-    // Mute Audio Toggle
-    const muteToggle = document.getElementById('setting-audio-toggle');
-    if (muteToggle) {
-      muteToggle.addEventListener('change', (e) => {
-        if (this.callbacks.onMuteToggle) this.callbacks.onMuteToggle(e.target.checked);
-      });
-    }
-  }
-
-  setPairingInfo(sessionCode, controllerUrl, qrDataUrl) {
-    if (this.startSessionCode) this.startSessionCode.textContent = sessionCode;
-    if (this.startControllerUrl) this.startControllerUrl.textContent = controllerUrl;
-    if (this.startQrImg && qrDataUrl) this.startQrImg.src = qrDataUrl;
-  }
-
-  setPhoneConnected(connected, deviceInfo) {
-    if (this.phonePairBanner) {
-      if (connected) {
-        this.phonePairBanner.className = 'phone-banner connected';
-        this.phonePairBanner.innerHTML = `<span>🟢 📱 PHONE CONNECTED (${deviceInfo || 'Mobile'})</span>`;
-      } else {
-        this.phonePairBanner.className = 'phone-banner waiting';
-        this.phonePairBanner.innerHTML = `<span>📡 SCAN QR CODE BELOW TO PAIR YOUR PHONE</span>`;
-      }
-    }
   }
 
   showStartScreen() {
@@ -192,34 +279,36 @@ export class Menus {
 
   showResults(stats) {
     this.hideAll();
-    if (this.resultsScreen) {
-      this.resultsScreen.classList.remove('hidden');
+    if (this.resultsScreen) this.resultsScreen.classList.remove('hidden');
 
-      if (this.resScore) this.resScore.textContent = Math.round(stats.score).toLocaleString();
-      if (this.resBestScore) this.resBestScore.textContent = Math.round(stats.highScore).toLocaleString();
-      if (this.resTopSpeed) this.resTopSpeed.textContent = `${Math.round(stats.topSpeed)} KM/H`;
-      if (this.resDistance) this.resDistance.textContent = `${(stats.distance / 1000).toFixed(2)} KM`;
-      if (this.resNearMiss) this.resNearMiss.textContent = stats.nearMisses;
-      if (this.resCoins) this.resCoins.textContent = stats.coins;
+    if (this.resScore) this.resScore.textContent = Math.round(stats.score).toLocaleString();
+    if (this.resBestScore) this.resBestScore.textContent = Math.round(stats.highScore).toLocaleString();
+    if (this.resTopSpeed) this.resTopSpeed.textContent = `${Math.round(stats.topSpeed)} KM/H`;
+    if (this.resDistance) this.resDistance.textContent = `${(stats.distance / 1000).toFixed(2)} KM`;
+    if (this.resNearMiss) this.resNearMiss.textContent = stats.nearMisses;
+    if (this.resCoins) this.resCoins.textContent = stats.coins;
 
-      // Calculate Driver Rank
-      let rank = 'C';
-      if (stats.score > 25000) rank = 'S+';
-      else if (stats.score > 15000) rank = 'S';
-      else if (stats.score > 8000) rank = 'A';
-      else if (stats.score > 4000) rank = 'B';
+    // Calculate Rank
+    let rank = 'RANK C';
+    if (stats.score > 15000) rank = 'RANK S';
+    else if (stats.score > 8000) rank = 'RANK A';
+    else if (stats.score > 3500) rank = 'RANK B';
 
-      if (this.resRank) {
-        this.resRank.textContent = rank;
-        this.resRank.className = `rank-badge rank-${rank.charAt(0).toLowerCase()}`;
-      }
-    }
+    if (this.resRank) this.resRank.textContent = rank;
+  }
+
+  hideAll() {
+    if (this.startScreen) this.startScreen.classList.add('hidden');
+    if (this.garageScreen) this.garageScreen.classList.add('hidden');
+    if (this.pauseScreen) this.pauseScreen.classList.add('hidden');
+    if (this.resultsScreen) this.resultsScreen.classList.add('hidden');
+    if (this.settingsModal) this.settingsModal.classList.add('hidden');
+    if (this.guideModal) this.guideModal.classList.add('hidden');
+    if (this.countdownOverlay) this.countdownOverlay.classList.add('hidden');
   }
 
   startCountdown(onComplete) {
-    this.cancelCountdown();
-
-    if (!this.countdownOverlay) {
+    if (!this.countdownOverlay || !this.countdownNumber) {
       if (onComplete) onComplete();
       return;
     }
@@ -231,6 +320,8 @@ export class Menus {
 
     if (this.callbacks.onBeep) this.callbacks.onBeep(false);
 
+    if (this.countdownTimer) clearInterval(this.countdownTimer);
+
     this.countdownTimer = setInterval(() => {
       count--;
       if (count > 0) {
@@ -238,10 +329,12 @@ export class Menus {
         if (this.callbacks.onBeep) this.callbacks.onBeep(false);
       } else if (count === 0) {
         this.countdownNumber.textContent = 'GO!';
-        this.countdownNumber.style.color = '#00f0ff';
+        this.countdownNumber.style.color = '#ff1133';
         if (this.callbacks.onBeep) this.callbacks.onBeep(true);
       } else {
-        this.cancelCountdown();
+        clearInterval(this.countdownTimer);
+        this.countdownTimer = null;
+        this.countdownOverlay.classList.add('hidden');
         if (onComplete) onComplete();
       }
     }, 900);
@@ -255,17 +348,5 @@ export class Menus {
     if (this.countdownOverlay) {
       this.countdownOverlay.classList.add('hidden');
     }
-    if (this.countdownNumber) {
-      this.countdownNumber.style.color = '#fff';
-    }
-  }
-
-  hideAll() {
-    this.cancelCountdown();
-    if (this.startScreen) this.startScreen.classList.add('hidden');
-    if (this.pauseScreen) this.pauseScreen.classList.add('hidden');
-    if (this.resultsScreen) this.resultsScreen.classList.add('hidden');
-    if (this.countdownOverlay) this.countdownOverlay.classList.add('hidden');
   }
 }
-

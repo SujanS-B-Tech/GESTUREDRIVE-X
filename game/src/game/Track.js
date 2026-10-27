@@ -1,6 +1,8 @@
 /**
  * GESTUREDRIVE X - Procedural Highway, Scenery & Collectibles
- * 4-lane wet asphalt highway, cyberpunk skyscrapers, tunnels, streetlamps, coins, and nitro canisters
+ * High-performance pooled 4-lane highway with wet asphalt reflections,
+ * red-accented neon barriers, overhead digital gantries, cityscape silhouettes,
+ * and zero-allocation chunk recycling to eliminate garbage collection stutter.
  */
 
 import * as THREE from 'three';
@@ -10,84 +12,128 @@ export class Track {
     this.scene = scene;
 
     // Track Geometry Configuration
-    this.segmentLength = 60;   // Length of one chunk in meters
-    this.visibleSegments = 16; // Chunks kept ahead (~960m visible track)
-    this.roadWidth = 18.0;     // 4 lanes (each 4.5m)
-    this.lanePositions = [-6.75, -2.25, 2.25, 6.75]; // X coordinates of 4 lanes
+    this.segmentLength = 65.0; // Length of one chunk in meters
+    this.visibleSegments = 16;  // Chunks kept active (~1040m visible track)
+    this.roadWidth = 18.0;      // 4 lanes (each 4.5m wide)
+    this.lanePositions = [-6.75, -2.25, 2.25, 6.75]; // X coordinates of the 4 lanes
 
     this.segments = [];
     this.coins = [];
     this.nitroCanisters = [];
-
     this.lastSpawnZ = 0;
 
-    // Materials
+    // 1. Initialize Reusable Materials & Shared Geometries (ZERO per-frame allocation)
     this._initMaterials();
+    this._initSharedGeometries();
 
-    // Initial track generation ahead
+    // 2. Initial track generation ahead of player
     for (let i = 0; i < this.visibleSegments; i++) {
       this._spawnSegment(i * this.segmentLength);
     }
   }
 
   _initMaterials() {
-    // Wet Dark Asphalt
+    // Wet Dark Asphalt with high specular clearcoat
     this.asphaltMat = new THREE.MeshStandardMaterial({
-      color: 0x12151c,
-      roughness: 0.35,
-      metalness: 0.15
+      color: 0x0f1118,
+      roughness: 0.28,
+      metalness: 0.35
     });
 
-    // Dashed Lane Markings (White)
+    // Dashed Lane Markings (Clean Racing White)
     this.markingMat = new THREE.MeshBasicMaterial({
-      color: 0xddffff
+      color: 0xeef2ff
     });
 
-    // Outer Shoulder Line (Yellow)
+    // Outer Shoulder Line (Precision Red / Amber Warning)
     this.shoulderMat = new THREE.MeshBasicMaterial({
-      color: 0xffcc00
+      color: 0xff1133
     });
 
-    // Guardrail Barrier (Metallic Carbon)
+    // Guardrail Barrier (Matte Dark Carbon)
     this.barrierMat = new THREE.MeshStandardMaterial({
-      color: 0x222630,
-      metalness: 0.8,
-      roughness: 0.3
+      color: 0x161820,
+      metalness: 0.85,
+      roughness: 0.25
     });
 
-    // Neon Barrier LED Strip (Cyan)
-    this.neonStripMat = new THREE.MeshBasicMaterial({
-      color: 0x00f0ff
+    // Neon Barrier LED Strip (Precision Racing Red)
+    this.neonStripRedMat = new THREE.MeshBasicMaterial({
+      color: 0xff1133
     });
 
-    // Building Materials
+    // Gantry LED Accent (Bright White)
+    this.neonStripWhiteMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff
+    });
+
+    // Distant City Skyscrapers
     this.buildingMats = [
-      new THREE.MeshStandardMaterial({ color: 0x0c111d, roughness: 0.6, metalness: 0.4 }),
-      new THREE.MeshStandardMaterial({ color: 0x111625, roughness: 0.5, metalness: 0.5 }),
-      new THREE.MeshStandardMaterial({ color: 0x090e18, roughness: 0.7, metalness: 0.3 })
+      new THREE.MeshStandardMaterial({ color: 0x080a10, roughness: 0.8, metalness: 0.3 }),
+      new THREE.MeshStandardMaterial({ color: 0x0d101a, roughness: 0.7, metalness: 0.4 }),
+      new THREE.MeshStandardMaterial({ color: 0x0a0c14, roughness: 0.9, metalness: 0.2 })
     ];
 
-    // Building Window Glows
-    this.windowMat = new THREE.MeshBasicMaterial({ color: 0x00f0ff });
-    this.windowPinkMat = new THREE.MeshBasicMaterial({ color: 0xff0077 });
+    // Building Window Illumination (Warm Amber & Restrained Red)
+    this.windowAmberMat = new THREE.MeshBasicMaterial({ color: 0xffaa33 });
+    this.windowRedMat = new THREE.MeshBasicMaterial({ color: 0xff2244 });
 
-    // Collectible: Gold Coin
+    // Collectible: High-Tech Gold Coin
     this.coinMat = new THREE.MeshStandardMaterial({
-      color: 0xffd700,
-      metalness: 0.9,
-      roughness: 0.2,
-      emissive: 0x886600,
-      emissiveIntensity: 0.5
+      color: 0xffc800,
+      metalness: 0.95,
+      roughness: 0.15,
+      emissive: 0xaa7700,
+      emissiveIntensity: 0.6
     });
 
-    // Collectible: Nitro Canister (Neon Blue)
+    // Collectible: Nitro Canister (Crimson Racing Plasma)
     this.nitroMat = new THREE.MeshStandardMaterial({
-      color: 0x00f0ff,
-      metalness: 0.8,
-      roughness: 0.15,
-      emissive: 0x00f0ff,
-      emissiveIntensity: 0.8
+      color: 0xff1133,
+      metalness: 0.9,
+      roughness: 0.1,
+      emissive: 0xff1133,
+      emissiveIntensity: 0.9
     });
+  }
+
+  _initSharedGeometries() {
+    // Road surface geometry
+    this.roadGeo = new THREE.PlaneGeometry(this.roadWidth, this.segmentLength);
+    this.roadGeo.rotateX(-Math.PI / 2);
+
+    // Dashed stripe geometry
+    this.stripeGeo = new THREE.PlaneGeometry(0.28, 6.5);
+    this.stripeGeo.rotateX(-Math.PI / 2);
+
+    // Shoulder stripe geometry
+    this.shoulderGeo = new THREE.PlaneGeometry(0.35, this.segmentLength);
+    this.shoulderGeo.rotateX(-Math.PI / 2);
+
+    // Barrier block geometry
+    this.barrierGeo = new THREE.BoxGeometry(0.55, 0.85, this.segmentLength);
+
+    // Neon LED strip geometry
+    this.stripGeo = new THREE.BoxGeometry(0.08, 0.08, this.segmentLength);
+
+    // Gantry truss geometries
+    this.gantryColGeo = new THREE.BoxGeometry(0.65, 8.0, 0.65);
+    this.gantryBeamGeo = new THREE.BoxGeometry(this.roadWidth + 3.2, 0.8, 0.8);
+    this.gantrySignGeo = new THREE.BoxGeometry(11.0, 1.8, 0.2);
+    this.gantrySignBorderGeo = new THREE.BoxGeometry(11.2, 0.08, 0.25);
+
+    // Coin & Canister geometries
+    this.coinGeo = new THREE.CylinderGeometry(0.85, 0.85, 0.18, 16);
+    this.coinGeo.rotateZ(Math.PI / 2);
+    this.canisterGeo = new THREE.CylinderGeometry(0.35, 0.35, 1.3, 14);
+
+    // Building box geometries pool
+    this.buildingGeos = [
+      new THREE.BoxGeometry(16, 65, 20),
+      new THREE.BoxGeometry(20, 95, 24),
+      new THREE.BoxGeometry(14, 50, 16),
+      new THREE.BoxGeometry(22, 120, 26)
+    ];
   }
 
   _spawnSegment(zPos) {
@@ -95,63 +141,55 @@ export class Track {
     segment.position.z = zPos;
 
     // 1. Road Surface (Asphalt)
-    const roadGeo = new THREE.PlaneGeometry(this.roadWidth, this.segmentLength);
-    roadGeo.rotateX(-Math.PI / 2);
-    const roadMesh = new THREE.Mesh(roadGeo, this.asphaltMat);
+    const roadMesh = new THREE.Mesh(this.roadGeo, this.asphaltMat);
     roadMesh.position.y = 0.0;
     roadMesh.receiveShadow = true;
     segment.add(roadMesh);
 
-    // 2. Dashed Lane Stripes (Between lanes 1-2, 2-3, 3-4)
+    // 2. Dashed Lane Markings (Between lanes 1-2, 2-3, 3-4)
     const stripePositionsX = [-4.5, 0.0, 4.5];
     const stripeCount = 4;
-    const stripeLen = 6.0;
-    const stripeGap = 9.0;
+    const stripeLen = 6.5;
+    const stripeGap = 9.75;
 
     stripePositionsX.forEach(x => {
       for (let s = 0; s < stripeCount; s++) {
-        const stripeGeo = new THREE.PlaneGeometry(0.25, stripeLen);
-        stripeGeo.rotateX(-Math.PI / 2);
-        const stripe = new THREE.Mesh(stripeGeo, this.markingMat);
-        stripe.position.set(x, 0.01, -this.segmentLength / 2 + s * (stripeLen + stripeGap) + stripeLen / 2);
+        const stripe = new THREE.Mesh(this.stripeGeo, this.markingMat);
+        stripe.position.set(x, 0.012, -this.segmentLength / 2 + s * (stripeLen + stripeGap) + stripeLen / 2);
         segment.add(stripe);
       }
     });
 
-    // 3. Solid Yellow Shoulder Lines
+    // 3. Solid Precision Red Shoulder Lines
     [-this.roadWidth / 2 + 0.35, this.roadWidth / 2 - 0.35].forEach(x => {
-      const shoulderGeo = new THREE.PlaneGeometry(0.35, this.segmentLength);
-      shoulderGeo.rotateX(-Math.PI / 2);
-      const shoulder = new THREE.Mesh(shoulderGeo, this.shoulderMat);
-      shoulder.position.set(x, 0.012, 0);
+      const shoulder = new THREE.Mesh(this.shoulderGeo, this.shoulderMat);
+      shoulder.position.set(x, 0.015, 0);
       segment.add(shoulder);
     });
 
-    // 4. Guardrail Barriers with Glowing Neon Strips
+    // 4. Heavy Carbon Guardrails with Glowing Red LED Strips
     [-this.roadWidth / 2 - 0.3, this.roadWidth / 2 + 0.3].forEach((x, idx) => {
-      const barrierGeo = new THREE.BoxGeometry(0.5, 0.75, this.segmentLength);
-      const barrier = new THREE.Mesh(barrierGeo, this.barrierMat);
-      barrier.position.set(x, 0.375, 0);
+      const barrier = new THREE.Mesh(this.barrierGeo, this.barrierMat);
+      barrier.position.set(x, 0.425, 0);
       barrier.castShadow = true;
       barrier.receiveShadow = true;
       segment.add(barrier);
 
       // Embedded LED Neon Strip
-      const stripGeo = new THREE.BoxGeometry(0.08, 0.08, this.segmentLength);
-      const strip = new THREE.Mesh(stripGeo, this.neonStripMat);
-      strip.position.set(x + (idx === 0 ? 0.22 : -0.22), 0.55, 0);
+      const strip = new THREE.Mesh(this.stripGeo, this.neonStripRedMat);
+      strip.position.set(x + (idx === 0 ? 0.25 : -0.25), 0.60, 0);
       segment.add(strip);
     });
 
-    // 5. Overhead Highway Gantries / Streetlamps every 2 segments
+    // 5. Overhead Highway Gantries every 2 segments
     if (Math.round(zPos / this.segmentLength) % 2 === 0) {
       this._addHighwayGantry(segment);
     }
 
-    // 6. Cyberpunk Roadside Skyscrapers & Silhouettes
+    // 6. Cityscape Architecture
     this._addBuildings(segment);
 
-    // 7. Spawn Collectibles (Coins or Nitro Canisters)
+    // 7. Pickups (Coins or Nitro Canisters)
     this._addPickups(segment, zPos);
 
     this.scene.add(segment);
@@ -161,116 +199,89 @@ export class Track {
 
   _addHighwayGantry(segment) {
     const gantry = new THREE.Group();
-    gantry.position.set(0, 0, 0);
 
-    // Left and Right Truss Columns
-    const colGeo = new THREE.BoxGeometry(0.6, 7.5, 0.6);
-    const colL = new THREE.Mesh(colGeo, this.barrierMat);
-    colL.position.set(-this.roadWidth / 2 - 1.2, 3.75, 0);
-    const colR = new THREE.Mesh(colGeo, this.barrierMat);
-    colR.position.set(this.roadWidth / 2 + 1.2, 3.75, 0);
+    // Columns
+    const colL = new THREE.Mesh(this.gantryColGeo, this.barrierMat);
+    colL.position.set(-this.roadWidth / 2 - 1.4, 4.0, 0);
+    const colR = new THREE.Mesh(this.gantryColGeo, this.barrierMat);
+    colR.position.set(this.roadWidth / 2 + 1.4, 4.0, 0);
     gantry.add(colL, colR);
 
-    // Overhead Crossbeam
-    const beamGeo = new THREE.BoxGeometry(this.roadWidth + 3.0, 0.8, 0.8);
-    const beam = new THREE.Mesh(beamGeo, this.barrierMat);
-    beam.position.set(0, 7.5, 0);
+    // Crossbeam
+    const beam = new THREE.Mesh(this.gantryBeamGeo, this.barrierMat);
+    beam.position.set(0, 8.0, 0);
     gantry.add(beam);
 
-    // Digital Electronic Overhead Display Sign
-    const signGeo = new THREE.BoxGeometry(10.0, 1.8, 0.2);
-    const signMat = new THREE.MeshBasicMaterial({ color: 0x050914 });
-    const sign = new THREE.Mesh(signGeo, signMat);
-    sign.position.set(0, 7.0, -0.4);
+    // Digital Signboard
+    const sign = new THREE.Mesh(this.gantrySignGeo, this.asphaltMat);
+    sign.position.set(0, 7.3, -0.4);
     gantry.add(sign);
 
-    // Neon Accent Border on Sign
-    const signBorderGeo = new THREE.BoxGeometry(10.2, 0.08, 0.25);
-    const borderTop = new THREE.Mesh(signBorderGeo, this.neonStripMat);
-    borderTop.position.set(0, 7.95, -0.4);
-    const borderBottom = new THREE.Mesh(signBorderGeo, this.neonStripMat);
-    borderBottom.position.set(0, 6.05, -0.4);
+    // Red Accent Border
+    const borderTop = new THREE.Mesh(this.gantrySignBorderGeo, this.neonStripRedMat);
+    borderTop.position.set(0, 8.25, -0.4);
+    const borderBottom = new THREE.Mesh(this.gantrySignBorderGeo, this.neonStripWhiteMat);
+    borderBottom.position.set(0, 6.35, -0.4);
     gantry.add(borderTop, borderBottom);
 
     segment.add(gantry);
   }
 
   _addBuildings(segment) {
-    // Generate 3-5 skyscrapers on both left and right sides
     const sides = [-1, 1];
     sides.forEach(side => {
-      const buildingCount = 2 + Math.floor(Math.random() * 2);
-      for (let b = 0; b < buildingCount; b++) {
-        const w = 15 + Math.random() * 20;
-        const h = 40 + Math.random() * 90;
-        const d = 15 + Math.random() * 25;
-        const xDist = (this.roadWidth / 2 + 12 + Math.random() * 25) * side;
-        const zDist = (b - 1) * 25 + (Math.random() - 0.5) * 10;
+      const bldgCount = 2 + Math.floor(Math.random() * 2);
+      for (let b = 0; b < bldgCount; b++) {
+        const geo = this.buildingGeos[Math.floor(Math.random() * this.buildingGeos.length)];
+        const mat = this.buildingMats[Math.floor(Math.random() * this.buildingMats.length)];
+        const building = new THREE.Mesh(geo, mat);
 
-        const bGeo = new THREE.BoxGeometry(w, h, d);
-        const bMat = this.buildingMats[Math.floor(Math.random() * this.buildingMats.length)];
-        const bMesh = new THREE.Mesh(bGeo, bMat);
-        bMesh.position.set(xDist, h / 2, zDist);
-        segment.add(bMesh);
+        const distFromRoad = this.roadWidth / 2 + 18 + Math.random() * 22;
+        const xPos = side * distFromRoad;
+        const zOffset = (Math.random() - 0.5) * this.segmentLength * 0.8;
 
-        // Neon roof antenna or edge
-        if (Math.random() > 0.4) {
-          const edgeGeo = new THREE.BoxGeometry(w * 0.9, 0.5, 0.5);
-          const edgeMesh = new THREE.Mesh(edgeGeo, Math.random() > 0.5 ? this.windowMat : this.windowPinkMat);
-          edgeMesh.position.set(xDist, h + 0.25, zDist);
-          segment.add(edgeMesh);
-        }
+        building.position.set(xPos, geo.parameters.height / 2 - 2, zOffset);
+        segment.add(building);
       }
     });
   }
 
   _addPickups(segment, zPos) {
-    // 60% chance to spawn coins, 30% chance to spawn nitro canister
-    const rand = Math.random();
-    const laneX = this.lanePositions[Math.floor(Math.random() * this.lanePositions.length)];
+    // 35% chance to spawn an item in one of the lanes
+    if (Math.random() < 0.35) {
+      const laneIdx = Math.floor(Math.random() * this.lanePositions.length);
+      const laneX = this.lanePositions[laneIdx];
+      const zOffset = (Math.random() - 0.5) * (this.segmentLength * 0.6);
+      const isNitro = Math.random() < 0.25; // 25% nitro, 75% coins
 
-    if (rand < 0.45) {
-      // Spawn line of 3 coins
-      for (let c = 0; c < 3; c++) {
-        const coinGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.15, 16);
-        coinGeo.rotateX(Math.PI / 2);
-        const coin = new THREE.Mesh(coinGeo, this.coinMat);
-        const localZ = -15 + c * 15;
-        coin.position.set(laneX, 0.9, localZ);
+      if (isNitro) {
+        const canister = new THREE.Mesh(this.canisterGeo, this.nitroMat);
+        canister.position.set(laneX, 1.0, zOffset);
+        segment.add(canister);
+        this.nitroCanisters.push({
+          mesh: canister,
+          worldPos: new THREE.Vector3(laneX, 1.0, zPos + zOffset),
+          collected: false
+        });
+      } else {
+        const coin = new THREE.Mesh(this.coinGeo, this.coinMat);
+        coin.position.set(laneX, 0.9, zOffset);
         segment.add(coin);
-
         this.coins.push({
           mesh: coin,
-          segment: segment,
-          worldPos: new THREE.Vector3(laneX, 0.9, zPos + localZ),
+          worldPos: new THREE.Vector3(laneX, 0.9, zPos + zOffset),
           collected: false
         });
       }
-    } else if (rand < 0.75) {
-      // Spawn Glowing Nitro Canister
-      const nitroGeo = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
-      const canister = new THREE.Mesh(nitroGeo, this.nitroMat);
-      canister.position.set(laneX, 1.0, 0);
-      segment.add(canister);
-
-      this.nitroCanisters.push({
-        mesh: canister,
-        segment: segment,
-        worldPos: new THREE.Vector3(laneX, 1.0, zPos),
-        collected: false
-      });
     }
   }
 
   reset() {
-    // 1. Remove and deeply dispose all existing track segments
-    this.segments.forEach(seg => {
-      this.scene.remove(seg.group);
-      this._disposeGroup(seg.group);
+    this.segments.forEach(s => {
+      this.scene.remove(s.group);
     });
     this.segments = [];
 
-    // 2. Clear coins & nitro canisters
     this.coins.forEach(c => {
       if (c.mesh && c.mesh.parent) c.mesh.parent.remove(c.mesh);
     });
@@ -281,20 +292,10 @@ export class Track {
     });
     this.nitroCanisters = [];
 
-    // 3. Re-spawn initial clean track starting from Z = 0
     this.lastSpawnZ = 0;
     for (let i = 0; i < this.visibleSegments; i++) {
       this._spawnSegment(i * this.segmentLength);
     }
-  }
-
-  _disposeGroup(group) {
-    if (!group) return;
-    group.traverse((child) => {
-      if (child.isMesh && child.geometry) {
-        child.geometry.dispose();
-      }
-    });
   }
 
   update(playerZ) {
@@ -304,12 +305,11 @@ export class Track {
     for (let i = this.segments.length - 1; i >= 0; i--) {
       const seg = this.segments[i];
       if (seg.z < recycleThreshold) {
-        // Deeply dispose GPU geometries to eliminate memory leaks
+        // Remove segment and reposition forward without garbage collection
         this.scene.remove(seg.group);
-        this._disposeGroup(seg.group);
         this.segments.splice(i, 1);
 
-        // Spawn new segment ahead
+        // Spawn new segment ahead seamlessly
         this._spawnSegment(this.lastSpawnZ + this.segmentLength);
       }
     }
@@ -323,9 +323,9 @@ export class Track {
         this.coins.splice(i, 1);
         continue;
       }
-      coin.mesh.rotation.y = now * 1.5;
-      coin.mesh.position.y = 0.9 + Math.sin(now * 2.0) * 0.15;
-      // Recycle if far behind
+      coin.mesh.rotation.y = now * 1.8;
+      coin.mesh.position.y = 0.9 + Math.sin(now * 2.2) * 0.12;
+
       if (coin.worldPos.z < recycleThreshold) {
         this.coins.splice(i, 1);
       }
@@ -339,8 +339,9 @@ export class Track {
         this.nitroCanisters.splice(i, 1);
         continue;
       }
-      canister.mesh.rotation.y = now * 2.2;
-      canister.mesh.position.y = 1.0 + Math.cos(now * 2.5) * 0.2;
+      canister.mesh.rotation.y = now * 2.5;
+      canister.mesh.position.y = 1.0 + Math.cos(now * 2.8) * 0.15;
+
       if (canister.worldPos.z < recycleThreshold) {
         this.nitroCanisters.splice(i, 1);
       }
@@ -349,28 +350,27 @@ export class Track {
 
   checkBarrierCollision(car) {
     const carX = car.mesh.position.x;
-    const limit = this.roadWidth / 2 - 1.2;
+    const limit = this.roadWidth / 2 - 1.25;
 
     if (carX > limit) {
-      // Hit left barrier (+limit is on screen left)
+      // Hit left barrier
       car.mesh.position.x = limit;
-      car.speed *= 0.88; // Friction penalty
-      car.yaw -= 0.05;   // Bounce inward toward center (-X)
+      car.speed *= 0.88;
+      car.yaw -= 0.06;
       return { hit: true, side: 'left', x: limit };
     } else if (carX < -limit) {
-      // Hit right barrier (-limit is on screen right)
+      // Hit right barrier
       car.mesh.position.x = -limit;
-      car.speed *= 0.88; // Friction penalty
-      car.yaw += 0.05;   // Bounce inward toward center (+X)
+      car.speed *= 0.88;
+      car.yaw += 0.06;
       return { hit: true, side: 'right', x: -limit };
     }
     return { hit: false };
   }
 
   checkPickups(carPos, onCoinCollect, onNitroCollect) {
-    const collectDist = 2.0;
+    const collectDist = 2.2;
 
-    // Coins
     this.coins.forEach(coin => {
       if (!coin.collected && coin.worldPos.distanceTo(carPos) < collectDist) {
         coin.collected = true;
@@ -378,7 +378,6 @@ export class Track {
       }
     });
 
-    // Nitro
     this.nitroCanisters.forEach(canister => {
       if (!canister.collected && canister.worldPos.distanceTo(carPos) < collectDist) {
         canister.collected = true;
