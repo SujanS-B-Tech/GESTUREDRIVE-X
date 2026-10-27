@@ -100,7 +100,7 @@ ue5_bridge/
 
 All test suites verify mathematically and structurally:
 
-### 1. Two-Hand Steering Math & Audio Lifecycle (`node test_webcam_steering.js`)
+### 1. Two-Hand Steering Math & Audio Lifecycle (`npm test`)
 - ✓ Level hands produce neutral straight steering (`steer = 0.0`)
 - ✓ Deadzone filters hand micro-tremors (`steer = 0.0`)
 - ✓ Turning wheel left produces smooth, natural left steering (`steer = -0.987`)
@@ -108,9 +108,14 @@ All test suites verify mathematically and structurally:
 - ✓ Invert steering option toggles direction
 - ✓ Tracking loss safely decays steering to 0.0
 - ✓ End-to-end car physics moves vehicle in correct screen direction
+- ✓ **100% Passed (9/9 tests)**
+
+### 2. Wall Collision Stability & Screen Flicker Elimination (`npm run test:collision`)
+- ✓ Baseline reproduction: 7 camera reversals and 0.478m/frame violent snaps reproduced
+- ✓ Engineered continuous slide physics: 0 oscillations, 0 yaw jitter, smooth monotonic glide
 - ✓ **100% Passed**
 
-### 2. Standalone PC & UE5 Bridge Integration (`node test_integration.js`)
+### 3. Standalone PC & UE5 Bridge Integration (`npm run test:integration`)
 - ✓ REST status endpoint responds HTTP 200
 - ✓ Game assets delivered (20+ KB HTML/CSS/JS)
 - ✓ UE5 C++ Bridge WebSocket connects and registers successfully
