@@ -6,8 +6,9 @@
 import * as THREE from 'three';
 
 export class TrafficManager {
-  constructor(scene) {
+  constructor(scene, track = null) {
     this.scene = scene;
+    this.track = track;
     this.lanePositions = [-6.75, -2.25, 2.25, 6.75]; // 4 lanes
     this.vehicles = [];
     this.maxTraffic = 7; // Optimal for density and performance
@@ -30,13 +31,17 @@ export class TrafficManager {
     this.headlightMat = new THREE.MeshBasicMaterial({ color: 0xffffcc });
     this.wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
 
-    // Pre-allocated shared geometries (Prevents GPU VRAM bloat)
-    this.bodyGeo = new THREE.BoxGeometry(1.9, 0.65, 4.2);
-    this.cabinGeo = new THREE.BoxGeometry(1.55, 0.55, 2.0);
-    this.tlGeo = new THREE.BoxGeometry(1.6, 0.1, 0.08);
-    this.hlGeo = new THREE.BoxGeometry(0.35, 0.12, 0.08);
-    this.wGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 12);
+    // Pre-allocated shared geometries (Sculpted modern car profiles)
+    this.chassisGeo = new THREE.BoxGeometry(1.94, 0.38, 4.3);
+    this.hoodGeo = new THREE.BoxGeometry(1.78, 0.22, 1.3);
+    this.cabinGeo = new THREE.BoxGeometry(1.52, 0.44, 2.1);
+    this.roofGeo = new THREE.BoxGeometry(1.40, 0.06, 1.4);
+    this.bumperGeo = new THREE.BoxGeometry(1.96, 0.24, 0.4);
+    this.tlGeo = new THREE.BoxGeometry(1.75, 0.08, 0.08);
+    this.hlGeo = new THREE.BoxGeometry(0.38, 0.12, 0.10);
+    this.wGeo = new THREE.CylinderGeometry(0.36, 0.36, 0.28, 16);
     this.wGeo.rotateZ(Math.PI / 2);
+    this.rimMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.15 });
   }
 
   init(playerZ) {
@@ -66,42 +71,72 @@ export class TrafficManager {
     const mesh = new THREE.Group();
     const mat = this.materials[Math.floor(Math.random() * this.materials.length)];
 
-    // Body
-    const body = new THREE.Mesh(this.bodyGeo, mat);
-    body.position.y = 0.55;
-    body.castShadow = true;
-    mesh.add(body);
+    // 1. Lower Chassis
+    const chassis = new THREE.Mesh(this.chassisGeo, mat);
+    chassis.position.y = 0.36;
+    chassis.castShadow = true;
+    chassis.receiveShadow = true;
+    mesh.add(chassis);
 
-    // Cabin
+    // 2. Sloped Aerodynamic Hood
+    const hood = new THREE.Mesh(this.hoodGeo, mat);
+    hood.position.set(0, 0.46, 1.15);
+    hood.rotation.x = -0.08;
+    hood.castShadow = true;
+    mesh.add(hood);
+
+    // 3. Cabin & Glass Greenhouse
     const cabin = new THREE.Mesh(this.cabinGeo, this.glassMat);
-    cabin.position.set(0, 1.05, -0.2);
+    cabin.position.set(0, 0.72, -0.15);
+    cabin.castShadow = true;
     mesh.add(cabin);
 
-    // Taillights
+    // 4. Roof Panel
+    const roof = new THREE.Mesh(this.roofGeo, mat);
+    roof.position.set(0, 0.95, -0.22);
+    roof.castShadow = true;
+    mesh.add(roof);
+
+    // 5. Front & Rear Bumpers
+    const bumperF = new THREE.Mesh(this.bumperGeo, mat);
+    bumperF.position.set(0, 0.28, 2.15);
+    const bumperR = new THREE.Mesh(this.bumperGeo, mat);
+    bumperR.position.set(0, 0.30, -2.15);
+    mesh.add(bumperF, bumperR);
+
+    // 6. Dynamic Taillights
     const tl = new THREE.Mesh(this.tlGeo, this.taillightMat);
-    tl.position.set(0, 0.65, -2.12);
+    tl.position.set(0, 0.48, -2.36);
     mesh.add(tl);
 
-    // Headlights
+    // 7. Crisp Xenon Headlights
     const hlL = new THREE.Mesh(this.hlGeo, this.headlightMat);
-    hlL.position.set(-0.65, 0.55, 2.12);
+    hlL.position.set(-0.68, 0.42, 2.34);
     const hlR = new THREE.Mesh(this.hlGeo, this.headlightMat);
-    hlR.position.set(0.65, 0.55, 2.12);
+    hlR.position.set(0.68, 0.42, 2.34);
     mesh.add(hlL, hlR);
 
-    // Wheels (Sharing wGeo)
+    // 8. Wheels with Alloy Rim Center
     [
-      [-0.95, 0.35, 1.2],
-      [0.95, 0.35, 1.2],
-      [-0.95, 0.35, -1.2],
-      [0.95, 0.35, -1.2]
+      [-0.98, 0.36, 1.25],
+      [0.98,  0.36, 1.25],
+      [-1.00, 0.36, -1.25],
+      [1.00,  0.36, -1.25]
     ].forEach(p => {
-      const w = new THREE.Mesh(this.wGeo, this.wheelMat);
-      w.position.set(p[0], p[1], p[2]);
-      mesh.add(w);
+      const wGroup = new THREE.Group();
+      wGroup.position.set(p[0], p[1], p[2]);
+
+      const tire = new THREE.Mesh(this.wGeo, this.wheelMat);
+      tire.castShadow = true;
+      wGroup.add(tire);
+
+      mesh.add(wGroup);
     });
 
-    mesh.position.set(laneX, 0, zPos);
+    const roadCenterX = this.track ? this.track.getCenterline(zPos) : 0;
+    const roadHeading = this.track ? this.track.getHeading(zPos) : 0;
+    mesh.position.set(roadCenterX + laneX, 0, zPos);
+    mesh.rotation.y = roadHeading;
     this.scene.add(mesh);
 
     this.vehicles.push({
@@ -126,6 +161,10 @@ export class TrafficManager {
       const forwardMeters = (v.speed * 1000 / 3600) * delta;
       v.mesh.position.z += forwardMeters;
 
+      const roadCenterX = this.track ? this.track.getCenterline(v.mesh.position.z) : 0;
+      const roadHeading = this.track ? this.track.getHeading(v.mesh.position.z) : 0;
+      v.mesh.rotation.y = roadHeading;
+
       // 2. AI Lane Changing Logic
       v.laneChangeTimer -= delta;
       if (v.laneChangeTimer <= 0) {
@@ -140,8 +179,8 @@ export class TrafficManager {
         }
       }
 
-      // Smooth lane transition
-      const targetX = this.lanePositions[v.targetLane];
+      // Smooth lane transition following curved road centerline
+      const targetX = roadCenterX + this.lanePositions[v.targetLane];
       v.mesh.position.x += (targetX - v.mesh.position.x) * Math.min(1.0, delta * 2.0);
       if (Math.abs(v.mesh.position.x - targetX) < 0.05) {
         v.currentLane = v.targetLane;

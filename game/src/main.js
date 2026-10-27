@@ -24,7 +24,7 @@ class GameApp {
     this.hud = new HUD();
     this.particles = new ParticleSystem(this.engine.scene);
     this.track = new Track(this.engine.scene);
-    this.traffic = new TrafficManager(this.engine.scene);
+    this.traffic = new TrafficManager(this.engine.scene, this.track);
     this.car = new Car(this.engine.scene, 0xff1133); // Racing Red Supercar
 
     // Laptop Webcam Hand Gesture Tracker
