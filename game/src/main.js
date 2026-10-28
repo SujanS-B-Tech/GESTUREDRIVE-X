@@ -143,9 +143,22 @@ class GameApp {
         this.currentCamIndex = (this.currentCamIndex + 1) % this.cameraModes.length;
         this.engine.cameraMode = this.cameraModes[this.currentCamIndex];
       }
-      if (e.code === 'F1' || e.code === 'KeyI') {
+      if (e.code === 'F1' || (e.code === 'KeyI' && !e.shiftKey)) {
         // Toggle real-time diagnostic telemetry mode
         if (this.hud) this.hud.toggleDiagnostics();
+      }
+      if (e.code === 'KeyX' || (e.code === 'KeyI' && e.shiftKey)) {
+        // Quick toggle steering inversion
+        if (this.webcamTracker) {
+          const inv = this.webcamTracker.toggleInvert();
+          if (this._updateInvertUI) this._updateInvertUI();
+          if (this.hud) {
+            this.hud.showNotification(
+              inv ? '⚠️ STEERING INVERTED' : '✓ STEERING NORMAL',
+              inv ? 'Turn Left -> Car turns Right [INV]' : 'Turn Left -> Car turns Left'
+            );
+          }
+        }
       }
     });
 
@@ -211,27 +224,53 @@ class GameApp {
     if (btnHudCalibrate) {
       btnHudCalibrate.addEventListener('click', () => {
         this.webcamTracker.calibrate();
+        if (this.hud) {
+          this.hud.showNotification('🎯 CALIBRATING WHEEL', 'Hold hands level at 9 and 3 for 1s');
+        }
+      });
+      btnHudCalibrate.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        this.webcamTracker.resetCalibration();
+        if (this.hud) {
+          this.hud.showNotification('🎯 BASELINE RESET', 'Neutral angle reset to 0.0° (Level)');
+        }
       });
     }
     if (settingCalibrate) {
       settingCalibrate.addEventListener('click', () => {
         this.webcamTracker.calibrate();
+        if (this.hud) {
+          this.hud.showNotification('🎯 CALIBRATING WHEEL', 'Hold hands level at 9 and 3 for 1s');
+        }
       });
     }
 
     const updateInvertUI = () => {
       const inv = this.webcamTracker.invertSteering;
       if (btnHudInvert) {
-        if (inv) btnHudInvert.classList.add('active');
-        else btnHudInvert.classList.remove('active');
+        if (inv) {
+          btnHudInvert.classList.add('active');
+          btnHudInvert.title = 'Invert Steering [ACTIVE: Left turns Right] — Click to Normalize';
+        } else {
+          btnHudInvert.classList.remove('active');
+          btnHudInvert.title = 'Invert Steering [NORMAL: Left turns Left] — Click to Invert';
+        }
       }
       if (settingInvert) settingInvert.checked = inv;
     };
+    this._updateInvertUI = updateInvertUI;
+    updateInvertUI();
 
     if (btnHudInvert) {
       btnHudInvert.addEventListener('click', () => {
-        this.webcamTracker.setInvert(!this.webcamTracker.invertSteering);
+        const inv = this.webcamTracker.toggleInvert();
         updateInvertUI();
+        if (this.hud) {
+          this.hud.showNotification(
+            inv ? '⚠️ STEERING INVERTED' : '✓ STEERING NORMAL',
+            inv ? 'Turn Left -> Car turns Right [INV]' : 'Turn Left -> Car turns Left'
+          );
+        }
       });
     }
 
@@ -239,6 +278,12 @@ class GameApp {
       settingInvert.addEventListener('change', (e) => {
         this.webcamTracker.setInvert(e.target.checked);
         updateInvertUI();
+        if (this.hud) {
+          this.hud.showNotification(
+            e.target.checked ? '⚠️ STEERING INVERTED' : '✓ STEERING NORMAL',
+            e.target.checked ? 'Turn Left -> Car turns Right [INV]' : 'Turn Left -> Car turns Left'
+          );
+        }
       });
     }
 

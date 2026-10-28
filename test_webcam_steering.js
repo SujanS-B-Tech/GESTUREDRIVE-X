@@ -311,6 +311,49 @@ audio.silenceCarSounds();
 assert.strictEqual(audio.carSoundVolume, 0.0, 'Car sound silenced on pause');
 console.log('✓ PASS: Pausing ducks audio cleanly without terminating racing sequence');
 
+// Test 10: MediaPipe Hand Order Fluctuation Invariance (Left/Right Detection Swaps)
+console.log('\n[Test 10] MediaPipe Hand Detection Array Order Invariance:');
+const testTrackerOrder = new TestTwoHandTracker();
+// 10a: Pass in order [handLeft, handRight]
+for (let i = 0; i < 5; i++) {
+  testTrackerOrder.processHands(handL_turnLeft, handR_turnLeft);
+}
+const order1Res = testTrackerOrder.processHands(handL_turnLeft, handR_turnLeft);
+console.log('Result with [Left, Right]:', order1Res);
+assert(order1Res.steer < -0.5, 'Steering must turn LEFT when input order is [Left, Right]');
+
+// 10b: Pass in REVERSED order [handRight, handLeft] (simulates MediaPipe flipping array index)
+const testTrackerReversed = new TestTwoHandTracker();
+for (let i = 0; i < 5; i++) {
+  testTrackerReversed.processHands(handR_turnLeft, handL_turnLeft);
+}
+const order2Res = testTrackerReversed.processHands(handR_turnLeft, handL_turnLeft);
+console.log('Result with [Right, Left]:', order2Res);
+assert(order2Res.steer < -0.5, 'Steering MUST STILL turn LEFT even when MediaPipe reverses array order!');
+assert.strictEqual(order1Res.gesture, order2Res.gesture, 'Gesture must be identical regardless of MediaPipe array order');
+console.log('✓ PASS: MediaPipe detection array order reversal yields 100% identical steering direction');
+
+// Test 11: Alternating Array Order over 50 Frames (Zero Flicker / Zero Inversion Sign Flips)
+console.log('\n[Test 11] Alternating Detection Array Order over 50 Frames:');
+let signFlips = 0;
+let prevSign = Math.sign(order1Res.steer);
+
+for (let frame = 0; frame < 50; frame++) {
+  // Alternate hand order every frame
+  const res = (frame % 2 === 0)
+    ? testTrackerOrder.processHands(handL_turnLeft, handR_turnLeft)
+    : testTrackerOrder.processHands(handR_turnLeft, handL_turnLeft);
+  
+  const currentSign = Math.sign(res.steer);
+  if (currentSign !== prevSign && currentSign !== 0) {
+    signFlips++;
+  }
+  prevSign = currentSign;
+}
+console.log(`Observed Directional Sign Flips over 50 Alternating Frames: ${signFlips}`);
+assert.strictEqual(signFlips, 0, 'There must be exactly 0 directional sign flips across alternating detection order!');
+console.log('✓ PASS: Alternating detection order produces rock-solid monotonic steering (0 sign flips)');
+
 console.log('\n======================================================');
 console.log('  ALL TWO-HAND STEERING & AUDIO TESTS PASSED (100% OK) ');
 console.log('======================================================\n');

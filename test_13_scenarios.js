@@ -68,24 +68,12 @@ class TrackerSimulator {
       const handA = detected[0];
       const handB = detected[1];
 
-      // Temporal hysteresis assignment
-      let hand9, hand3;
-      if (this.prevHand9 && this.prevHand3) {
-        const distA9 = this._dist(handA, this.prevHand9);
-        const distB3 = this._dist(handB, this.prevHand3);
-        const distB9 = this._dist(handB, this.prevHand9);
-        const distA3 = this._dist(handA, this.prevHand3);
-        if ((distA9 + distB3) <= (distB9 + distA3)) {
-          hand9 = handA;
-          hand3 = handB;
-        } else {
-          hand9 = handB;
-          hand3 = handA;
-        }
-      } else {
-        hand9 = (handA.screenX < handB.screenX) ? handA : handB;
-        hand3 = (handA.screenX < handB.screenX) ? handB : handA;
-      }
+      // INVARIANT: Hand on the left of player's mirrored view (smaller screenX) is ALWAYS hand9.
+      // Hand on the right (larger screenX) is ALWAYS hand3.
+      // Strict horizontal sorting guarantees hand9 is ALWAYS on the left and hand3 is ALWAYS on the right,
+      // completely eliminating random or intermittent steering direction inversion!
+      const hand9 = (handA.screenX <= handB.screenX) ? handA : handB;
+      const hand3 = (handA.screenX <= handB.screenX) ? handB : handA;
 
       this.prevHand9 = { screenX: hand9.screenX, screenY: hand9.screenY };
       this.prevHand3 = { screenX: hand3.screenX, screenY: hand3.screenY };

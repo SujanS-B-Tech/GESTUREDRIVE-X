@@ -157,6 +157,7 @@ export class HUD {
         }
 
         if (this.camDirBadge) {
+          const invSuffix = webcamInput.inverted ? ' [INV]' : '';
           if (webcamInput.nitro) {
             this.camDirBadge.textContent = '⚡ NITRO';
             this.camDirBadge.className = 'cam-dir-badge nitro';
@@ -164,13 +165,13 @@ export class HUD {
             this.camDirBadge.textContent = '🛑 BRAKE';
             this.camDirBadge.className = 'cam-dir-badge brake';
           } else if (webcamInput.steer < -0.15) {
-            this.camDirBadge.textContent = '◀ LEFT';
+            this.camDirBadge.textContent = `◀ LEFT${invSuffix}`;
             this.camDirBadge.className = 'cam-dir-badge left';
           } else if (webcamInput.steer > 0.15) {
-            this.camDirBadge.textContent = '▶ RIGHT';
+            this.camDirBadge.textContent = `▶ RIGHT${invSuffix}`;
             this.camDirBadge.className = 'cam-dir-badge right';
           } else {
-            this.camDirBadge.textContent = '▲ STRAIGHT';
+            this.camDirBadge.textContent = `▲ STRAIGHT${invSuffix}`;
             this.camDirBadge.className = 'cam-dir-badge';
           }
         }
@@ -265,6 +266,24 @@ export class HUD {
     this.comboTimer = setTimeout(() => {
       this.comboPopup.classList.remove('active');
     }, 2000);
+  }
+
+  showNotification(title, subtitle = '') {
+    if (!this.comboPopup) return;
+
+    if (this.comboText) {
+      this.comboText.textContent = title;
+    }
+    if (this.comboScore) {
+      this.comboScore.textContent = subtitle;
+    }
+
+    this.comboPopup.classList.add('active');
+
+    if (this.comboTimer) clearTimeout(this.comboTimer);
+    this.comboTimer = setTimeout(() => {
+      this.comboPopup.classList.remove('active');
+    }, 2200);
   }
 
   _renderRadar(car, trafficManager) {

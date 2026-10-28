@@ -252,31 +252,20 @@ export class WebcamGestureTracker {
       this.lostFrames = 0;
 
       // Extract Screen Coordinates (Mirrored: screenX = 1.0 - rawX so left hand is on left)
-      const handA = this._getHandInfo(detected[0]);
-      const handB = this._getHandInfo(detected[1]);
+      const hand0 = this._getHandInfo(detected[0]);
+      const hand1 = this._getHandInfo(detected[1]);
 
-      // Assign Left Hand (9 o'clock) and Right Hand (3 o'clock)
-      // Use temporal hysteresis: track persistent positions to prevent instant 180-deg flip when tilting past vertical
-      let hand9, hand3;
-      if (this.prevHand9 && this.prevHand3) {
-        const distA9 = this._distance(handA, this.prevHand9);
-        const distB3 = this._distance(handB, this.prevHand3);
-        const distB9 = this._distance(handB, this.prevHand9);
-        const distA3 = this._distance(handA, this.prevHand3);
-        if ((distA9 + distB3) <= (distB9 + distA3)) {
-          hand9 = handA;
-          hand3 = handB;
-        } else {
-          hand9 = handB;
-          hand3 = handA;
-        }
-      } else {
-        hand9 = (handA.screenX < handB.screenX) ? handA : handB;
-        hand3 = (handA.screenX < handB.screenX) ? handB : handA;
-      }
+      // INVARIANT: In a 9-and-3 two-hand steering grip, the hand on the left of the player's
+      // mirrored field of view (smaller screenX) is ALWAYS the 9 o'clock hand (left hand).
+      // The hand on the right (larger screenX) is ALWAYS the 3 o'clock hand (right hand).
+      // MediaPipe may return detected[0] and detected[1] in arbitrary or fluctuating order.
+      // Strict horizontal sorting guarantees hand9 is ALWAYS on the left and hand3 is ALWAYS on the right,
+      // completely eliminating random or intermittent steering direction inversion!
+      const hand9 = (hand0.screenX <= hand1.screenX) ? hand0 : hand1;
+      const hand3 = (hand0.screenX <= hand1.screenX) ? hand1 : hand0;
 
-      this.prevHand9 = { screenX: hand9.screenX, screenY: hand9.screenY };
-      this.prevHand3 = { screenX: hand3.screenX, screenY: hand3.screenY };
+      this.prevHand9 = { screenX: hand9.screenX, screenY: hand9.screenY, x: hand9.screenX, y: hand9.screenY };
+      this.prevHand3 = { screenX: hand3.screenX, screenY: hand3.screenY, x: hand3.screenX, y: hand3.screenY };
 
       this.handLPos = { x: hand9.screenX, y: hand9.screenY };
       this.handRPos = { x: hand3.screenX, y: hand3.screenY };
@@ -346,13 +335,27 @@ export class WebcamGestureTracker {
 
   _compute9And3Steering(hand9, hand3, w, h) {
     // Vector from Left Hand (9h) to Right Hand (3h) in screen space
-    const deltaX = hand3.screenX - hand9.screenX; // Positive distance between hands
+    // Since hand9 is strictly to the left of hand3, deltaX is strictly positive
+    const deltaX = hand3.screenX - hand9.screenX;
     const deltaY = hand3.screenY - hand9.screenY; // Vertical tilt
 
+    // Guard against hands touching or crossing
+    if (deltaX < 0.06) {
+      this.currentGesture = 'SPREAD_HANDS';
+      return;
+    }
+
     // Calculate Steering Wheel Angle (radians):
-    // Turn LEFT: Left hand (9h) moves DOWN -> hand9.screenY increases -> deltaY < 0 -> rawAngle < 0 (NEGATIVE)
-    // Turn RIGHT: Right hand (3h) moves DOWN -> hand3.screenY increases -> deltaY > 0 -> rawAngle > 0 (POSITIVE)
-    const rawWheelAngle = Math.atan2(deltaY, Math.max(0.08, deltaX));
+    // Screen coords: Top is Y=0, Bottom is Y=1.
+    // Turn LEFT: Left hand (9h) moves DOWN -> hand9.screenY increases
+    //            Right hand (3h) moves UP -> hand3.screenY decreases
+    //            deltaY = hand3.screenY - hand9.screenY is NEGATIVE
+    //            rawWheelAngle is NEGATIVE (< 0) -> Steer LEFT
+    // Turn RIGHT: Right hand (3h) moves DOWN -> hand3.screenY increases
+    //             Left hand (9h) moves UP -> hand9.screenY decreases
+    //             deltaY = hand3.screenY - hand9.screenY is POSITIVE
+    //             rawWheelAngle is POSITIVE (> 0) -> Steer RIGHT
+    const rawWheelAngle = Math.atan2(deltaY, Math.max(0.06, deltaX));
     this.lastWheelAngle = rawWheelAngle;
 
     const wheelCenterX = (hand9.screenX + hand3.screenX) * 0.5;
@@ -365,8 +368,12 @@ export class WebcamGestureTracker {
         // Average the settled calibration samples
         let sumAngle = 0, sumX = 0;
         this.calibrationSamples.forEach(s => { sumAngle += s.angle; sumX += s.centerX; });
-        this.calibratedNeutralAngle = sumAngle / this.calibrationSamples.length;
-        this.calibratedCenterX = sumX / this.calibrationSamples.length;
+        const avgAngle = sumAngle / this.calibrationSamples.length;
+        const avgX = sumX / this.calibrationSamples.length;
+        // Clamp calibrated neutral baseline to reasonable ±8 degrees (±0.14 rad)
+        // to prevent mouse-click hand movements from corrupting the baseline
+        this.calibratedNeutralAngle = Math.max(-0.14, Math.min(0.14, avgAngle));
+        this.calibratedCenterX = Math.max(0.35, Math.min(0.65, avgX));
         this.isCalibrated = true;
         this.calibrationSamples = [];
         console.log(`[WebcamTracker] Calibrated settled baseline: ${(this.calibratedNeutralAngle * 180 / Math.PI).toFixed(1)}°`);
@@ -375,14 +382,15 @@ export class WebcamGestureTracker {
 
     // Relative angle against neutral baseline
     const relativeAngle = rawWheelAngle - this.calibratedNeutralAngle;
-    const relativeDispX = wheelCenterX - this.calibratedCenterX;
 
     // Angle component: ~28.6 degrees tilt gives full lock
     const angleRatio = relativeAngle / this.options.maxTiltAngle;
-    // Lateral shift assist: subtle lane positioning
-    const dispRatio = relativeDispX / 0.18;
 
-    let calculatedSteer = angleRatio * 0.85 + dispRatio * 0.35;
+    // Subtle lateral centering assist (cannot override or fight wheel tilt angle)
+    const relativeDispX = wheelCenterX - this.calibratedCenterX;
+    const dispAssist = Math.max(-0.25, Math.min(0.25, relativeDispX / 0.20)) * 0.15;
+
+    let calculatedSteer = angleRatio + dispAssist;
 
     // Deadzone application around neutral center
     const absSteer = Math.abs(calculatedSteer);
@@ -503,28 +511,41 @@ export class WebcamGestureTracker {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
     ctx.stroke();
 
-    // 3. 9 o'clock & 3 o'clock Grip Badges
+    // 3. 9 o'clock & 3 o'clock Grip Badges (Mirrored canvas: 9h is on player's left, 3h is on right)
     ctx.font = 'bold 11px sans-serif';
     ctx.save();
     ctx.translate(lx, ly - 14);
     ctx.scale(-1, 1);
     ctx.fillStyle = '#ff1133';
-    ctx.fillText('9h', -8, 0);
+    ctx.fillText('9h (LEFT)', -20, 0);
     ctx.restore();
 
     ctx.save();
     ctx.translate(rx, ry - 14);
     ctx.scale(-1, 1);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText('3h', -8, 0);
+    ctx.fillText('3h (RIGHT)', -24, 0);
     ctx.restore();
 
-    // 4. Center Wheel Hub
+    // 4. Center Wheel Hub & Direction Indicator
     ctx.beginPath();
     ctx.arc(midX, midY, 9, 0, Math.PI * 2);
     ctx.fillStyle = this.smoothedSteer < -0.15 ? '#ff1133' : (this.smoothedSteer > 0.15 ? '#ff4466' : '#ffffff');
     ctx.shadowBlur = 10;
     ctx.fill();
+
+    // 5. Inverted Steering Warning Banner on Canvas
+    if (this.invertSteering) {
+      ctx.save();
+      ctx.setTransform(-1, 0, 0, 1, w, 0);
+      ctx.fillStyle = 'rgba(255, 170, 0, 0.92)';
+      ctx.fillRect(w * 0.05, h - 26, w * 0.9, 20);
+      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = '#0a0a0e';
+      ctx.textAlign = 'center';
+      ctx.fillText('⚠️ STEERING INVERTED (Press X or Click 🔄 to Normalize)', w * 0.5, h - 13);
+      ctx.restore();
+    }
 
     ctx.restore();
   }
@@ -648,6 +669,21 @@ export class WebcamGestureTracker {
     this.invertSteering = Boolean(invert);
     localStorage.setItem('GD_INVERT_STEER', this.invertSteering.toString());
     console.log(`[WebcamTracker] Steering inversion set to: ${this.invertSteering}`);
+    this._notifyState('CONFIG_CHANGE', `Steering inversion: ${this.invertSteering ? 'INVERTED' : 'NORMAL'}`);
+  }
+
+  toggleInvert() {
+    this.setInvert(!this.invertSteering);
+    return this.invertSteering;
+  }
+
+  resetCalibration() {
+    this.calibratedNeutralAngle = 0.0;
+    this.calibratedCenterX = 0.5;
+    this.calibrationCountdown = 0;
+    this.calibrationSamples = [];
+    console.log('[WebcamTracker] Neutral baseline reset to true horizontal level (0.0°).');
+    this._notifyState('CALIBRATED', 'Neutral baseline reset to 0.0°');
   }
 
   getInput() {
@@ -695,14 +731,20 @@ export class WebcamGestureTracker {
         isHandDetected: this.isHandDetected,
         handsCount: this.detectedHandsCount,
         steer: this.smoothedSteer,
-        gesture: this.currentGesture
+        gesture: this.currentGesture,
+        inverted: this.invertSteering
       });
     }
   }
 
   _distance(p1, p2) {
-    const dx = p1.x - p2.x;
-    const dy = p1.y - p2.y;
+    if (!p1 || !p2) return 0;
+    const x1 = (p1.screenX !== undefined) ? p1.screenX : ((p1.x !== undefined) ? p1.x : (p1.rawX || 0));
+    const y1 = (p1.screenY !== undefined) ? p1.screenY : ((p1.y !== undefined) ? p1.y : (p1.rawY || 0));
+    const x2 = (p2.screenX !== undefined) ? p2.screenX : ((p2.x !== undefined) ? p2.x : (p2.rawX || 0));
+    const y2 = (p2.screenY !== undefined) ? p2.screenY : ((p2.y !== undefined) ? p2.y : (p2.rawY || 0));
+    const dx = x1 - x2;
+    const dy = y1 - y2;
     return Math.sqrt(dx * dx + dy * dy);
   }
 
