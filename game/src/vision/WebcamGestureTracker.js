@@ -23,7 +23,8 @@ export class WebcamGestureTracker {
       sensitivity: 1.4,         // Steering multiplier
       smoothingFactor: 0.35,    // Exponential filter alpha
       minConfidence: 0.55,      // Detection confidence
-      targetFps: 32             // Inference rate limit (prevents lag and GPU overload)
+      targetFps: 32,            // Inference rate limit (prevents lag and GPU overload)
+      trackingLossTimeoutMs: 200 // Max allowed input age before safe decay to neutral
     }, options);
 
     // Calibration State
@@ -36,16 +37,22 @@ export class WebcamGestureTracker {
     // Direction Inversion Setting (persisted in localStorage)
     this.invertSteering = localStorage.getItem('GD_INVERT_STEER') === 'true';
 
-    // Tracking & Concurrency State
+    // Tracking & Concurrency State with Deadlock Watchdog
     this.isActive = false;
     this.isEvaluating = false;         // Concurrency guard: prevents overlapping hands.send calls
+    this.evaluationStartTime = 0;      // Deadlock watchdog timer
     this.lastInferenceTime = 0;        // Frame throttling clock
+    this.lastInputTimestamp = 0;       // Timestamp of latest valid hand packet
     this.isHandDetected = false;
     this.detectedHandsCount = 0;
     this.lostFrames = 0;
     this.stream = null;
     this.hands = null;
     this.animFrameId = null;
+
+    // Temporal Hand Tracking Persistence (prevents left/right hand flipping during tilts)
+    this.prevHand9 = null;
+    this.prevHand3 = null;
 
     // Performance Metrics
     this.inferenceLatencyMs = 0;
@@ -179,6 +186,12 @@ export class WebcamGestureTracker {
     const now = performance.now();
     const minIntervalMs = 1000 / this.options.targetFps; // ~31ms for 32 FPS
 
+    // Watchdog check for hung inference
+    if (this.isEvaluating && (now - this.evaluationStartTime > 250)) {
+      console.warn('[WebcamTracker] Watchdog: Inference timed out (>250ms). Resetting concurrency guard.');
+      this.isEvaluating = false;
+    }
+
     // Throttling: If called faster than target FPS, schedule next tick and wait
     if (now - this.lastInferenceTime < minIntervalMs) {
       this.animFrameId = requestAnimationFrame(() => this._processFrame());
@@ -193,6 +206,7 @@ export class WebcamGestureTracker {
 
     if (this.video && this.video.readyState >= 2 && this.video.videoWidth > 0 && this.video.videoHeight > 0 && this.hands) {
       this.isEvaluating = true;
+      this.evaluationStartTime = performance.now();
       const sendStartTime = performance.now();
 
       try {
@@ -220,13 +234,18 @@ export class WebcamGestureTracker {
   }
 
   _onResults(results) {
-    const w = this.canvas.width = this.video.videoWidth || 640;
-    const h = this.canvas.height = this.video.videoHeight || 480;
+    const w = this.video.videoWidth || 640;
+    const h = this.video.videoHeight || 480;
+
+    // Avoid DOM resize thrashing: only update canvas dimensions if changed
+    if (this.canvas.width !== w) this.canvas.width = w;
+    if (this.canvas.height !== h) this.canvas.height = h;
 
     this.ctx.clearRect(0, 0, w, h);
 
     const detected = results.multiHandLandmarks || [];
     this.detectedHandsCount = detected.length;
+    this.lastInputTimestamp = performance.now();
 
     if (detected.length >= 2) {
       this.isHandDetected = true;
@@ -236,9 +255,28 @@ export class WebcamGestureTracker {
       const handA = this._getHandInfo(detected[0]);
       const handB = this._getHandInfo(detected[1]);
 
-      // Assign Left Hand (9 o'clock) and Right Hand (3 o'clock) based on horizontal screen position
-      const hand9 = (handA.screenX < handB.screenX) ? handA : handB; // Left Hand (9 o'clock)
-      const hand3 = (handA.screenX < handB.screenX) ? handB : handA; // Right Hand (3 o'clock)
+      // Assign Left Hand (9 o'clock) and Right Hand (3 o'clock)
+      // Use temporal hysteresis: track persistent positions to prevent instant 180-deg flip when tilting past vertical
+      let hand9, hand3;
+      if (this.prevHand9 && this.prevHand3) {
+        const distA9 = this._distance(handA, this.prevHand9);
+        const distB3 = this._distance(handB, this.prevHand3);
+        const distB9 = this._distance(handB, this.prevHand9);
+        const distA3 = this._distance(handA, this.prevHand3);
+        if ((distA9 + distB3) <= (distB9 + distA3)) {
+          hand9 = handA;
+          hand3 = handB;
+        } else {
+          hand9 = handB;
+          hand3 = handA;
+        }
+      } else {
+        hand9 = (handA.screenX < handB.screenX) ? handA : handB;
+        hand3 = (handA.screenX < handB.screenX) ? handB : handA;
+      }
+
+      this.prevHand9 = { screenX: hand9.screenX, screenY: hand9.screenY };
+      this.prevHand3 = { screenX: hand3.screenX, screenY: hand3.screenY };
 
       this.handLPos = { x: hand9.screenX, y: hand9.screenY };
       this.handRPos = { x: hand3.screenX, y: hand3.screenY };
@@ -252,8 +290,16 @@ export class WebcamGestureTracker {
       this._notifyState('TRACKING', `Two-Hand 9 & 3 Steering Active (${this.currentGesture})`);
 
     } else if (detected.length === 1) {
-      // Single hand detected: hold briefly, then decay to neutral safely
+      // Single hand detected: hold briefly (< 4 frames / ~120ms), then decay to neutral safely
       this.lostFrames++;
+      if (this.lostFrames >= 4) {
+        this.isHandDetected = false;
+        this._decayToNeutral();
+      } else {
+        this.smoothedSteer *= 0.92;
+      }
+      this.prevHand9 = null;
+      this.prevHand3 = null;
       this._handlePartialOrLostTracking(detected, w, h);
       this._notifyState('ONE_HAND', 'HOLD BOTH HANDS AT 9 & 3 TO STEER');
 
@@ -261,6 +307,8 @@ export class WebcamGestureTracker {
       // No hands: smooth decay to neutral
       this.lostFrames++;
       this.isHandDetected = false;
+      this.prevHand9 = null;
+      this.prevHand3 = null;
       this._decayToNeutral();
       this.currentGesture = 'NO_HAND';
       this._notifyState('NO_HAND', 'SHOW BOTH HANDS TO CAMERA');
@@ -358,8 +406,8 @@ export class WebcamGestureTracker {
 
     this.rawSteer = calculatedSteer;
 
-    // Gesture Classification (Brake = Fist, Nitro = Thumbs-Up)
-    const isBraking = hand9.isFist || hand3.isFist;
+    // Gesture Classification (Brake = Fist on both hands, or single hand tight fist when not steering hard)
+    const isBraking = (hand9.isFist && hand3.isFist) || ((hand9.isFist || hand3.isFist) && Math.abs(calculatedSteer) < 0.25);
     const isNitro = hand9.isThumbsUp || hand3.isThumbsUp;
 
     let rawThrottle = 1.0;
@@ -385,6 +433,7 @@ export class WebcamGestureTracker {
     // Exponential Low-Latency Filter
     const alpha = this.options.smoothingFactor;
     this.smoothedSteer = this.smoothedSteer * (1.0 - alpha) + this.rawSteer * alpha;
+    if (Math.abs(this.smoothedSteer) < 0.005) this.smoothedSteer = 0.0;
     this.smoothedBrake = this.smoothedBrake * (1.0 - alpha) + rawBrake * alpha;
     this.smoothedThrottle = this.smoothedThrottle * (1.0 - alpha) + rawThrottle * alpha;
     this.isNitro = isNitro;
@@ -396,19 +445,20 @@ export class WebcamGestureTracker {
       this._drawHandBones(this.ctx, hand.landmarks, w, h, '#ffaa00', '#ff0077');
     }
 
-    // If hands were lost very recently (< 6 frames / 180ms), hold steering gently
-    if (this.lostFrames < 6) {
-      this.smoothedSteer *= 0.95;
+    // If hands were lost very recently (< 4 frames / ~120ms), hold steering gently
+    if (this.lostFrames < 4) {
+      this.smoothedSteer *= 0.90;
     } else {
-      // Smooth decay toward neutral straight driving
+      // Smooth decay toward neutral straight driving and clear detection flag
+      this.isHandDetected = false;
       this._decayToNeutral();
     }
     this.currentGesture = 'HOLD_BOTH_HANDS';
   }
 
   _decayToNeutral() {
-    this.smoothedSteer *= 0.80;
-    if (Math.abs(this.smoothedSteer) < 0.02) this.smoothedSteer = 0.0;
+    this.smoothedSteer *= 0.75;
+    if (Math.abs(this.smoothedSteer) < 0.015) this.smoothedSteer = 0.0;
     this.smoothedBrake = 0.0;
     this.smoothedThrottle = 0.0;
     this.isNitro = false;
@@ -530,9 +580,11 @@ export class WebcamGestureTracker {
     const invLabel = this.invertSteering ? '[INV]' : '';
     ctx.fillText(`Action: ${dirText} ${invLabel}`, padX + 8, padY + 70);
 
-    // Line 5: Inference Latency
-    ctx.fillStyle = '#777788';
-    ctx.fillText(`Latency: ${this.inferenceLatencyMs}ms (Throttled 32fps)`, padX + 8, padY + 84);
+    // Line 5: Inference Latency & Input Age
+    const inputAgeMs = this.lastInputTimestamp > 0 ? Math.round(performance.now() - this.lastInputTimestamp) : 0;
+    const isStale = inputAgeMs > (this.options.trackingLossTimeoutMs || 200);
+    ctx.fillStyle = isStale ? '#ff4444' : '#777788';
+    ctx.fillText(`Latency: ${this.inferenceLatencyMs}ms | Age: ${inputAgeMs}ms ${isStale ? '[STALE]' : ''}`, padX + 8, padY + 84);
 
     ctx.restore();
   }
@@ -599,20 +651,39 @@ export class WebcamGestureTracker {
   }
 
   getInput() {
+    const now = performance.now();
+    const inputAgeMs = this.lastInputTimestamp > 0 ? Math.round(now - this.lastInputTimestamp) : 9999;
+    const timeout = this.options.trackingLossTimeoutMs || 200;
+
+    // Safe timeout watchdog: If input is older than timeout, release stale input and decay toward neutral
+    const isStale = inputAgeMs > timeout;
+    if (isStale && this.isHandDetected) {
+      this.isHandDetected = false;
+      this.detectedHandsCount = 0;
+      this.prevHand9 = null;
+      this.prevHand3 = null;
+      this._decayToNeutral();
+      this.currentGesture = 'NO_HAND';
+    }
+
     return {
       active: this.isActive,
-      handDetected: this.isHandDetected,
-      handsCount: this.detectedHandsCount,
+      handDetected: this.isHandDetected && !isStale,
+      handsCount: isStale ? 0 : this.detectedHandsCount,
       steer: Number(this.smoothedSteer.toFixed(3)),
       rawSteer: Number(this.rawSteer.toFixed(3)),
       throttle: Number(this.smoothedThrottle.toFixed(3)),
       brake: Number(this.smoothedBrake.toFixed(3)),
       nitro: this.isNitro,
-      gesture: this.currentGesture,
+      gesture: isStale ? 'NO_HAND' : this.currentGesture,
       angleDeg: Math.round(this.lastWheelAngle * 180 / Math.PI),
       latencyMs: this.inferenceLatencyMs,
       fps: this.inferenceFps,
-      inverted: this.invertSteering
+      inverted: this.invertSteering,
+      inputAgeMs: inputAgeMs,
+      isStale: isStale,
+      timestamp: this.lastInputTimestamp,
+      connectionStatus: this.isActive ? 'ACTIVE' : 'OFF'
     };
   }
 
@@ -637,17 +708,27 @@ export class WebcamGestureTracker {
 
   _checkFist(lm, palmScale) {
     const wrist = lm[0];
+    const palmCenter = {
+      x: (lm[0].x + lm[5].x + lm[9].x + lm[17].x) * 0.25,
+      y: (lm[0].y + lm[5].y + lm[9].y + lm[17].y) * 0.25
+    };
     const tips = [8, 12, 16, 20];
     const pips = [6, 10, 14, 18];
-    let curledCount = 0;
+    let tightlyCurledCount = 0;
+
     for (let i = 0; i < 4; i++) {
-      const tipDist = this._distance(lm[tips[i]], wrist);
-      const pipDist = this._distance(lm[pips[i]], wrist);
-      if (tipDist < pipDist + (palmScale * 0.1)) {
-        curledCount++;
+      const tipDistToPalm = this._distance(lm[tips[i]], palmCenter);
+      const pipDistToPalm = this._distance(lm[pips[i]], palmCenter);
+      const tipDistToWrist = this._distance(lm[tips[i]], wrist);
+      const pipDistToWrist = this._distance(lm[pips[i]], wrist);
+
+      // In a real tight fist, fingertips are tucked tight to the palm center
+      // and noticeably closer to the wrist than the PIP knuckles
+      if (tipDistToPalm < pipDistToPalm * 0.90 && tipDistToWrist < pipDistToWrist * 0.92) {
+        tightlyCurledCount++;
       }
     }
-    return curledCount >= 3;
+    return tightlyCurledCount >= 3;
   }
 
   _checkThumbsUp(lm) {

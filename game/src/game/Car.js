@@ -606,16 +606,21 @@ export class Car {
     const steerAttenuation = 1.0 - speedRatio * 0.45;
 
     let steerCmd = input.steer || 0.0;
-    // Barrier contact prevention: clamp steering from penetrating deeper into wall
+    // Barrier contact prevention: clamp steering from penetrating deeper into wall,
+    // while allowing immediate steering recovery away from the barrier
     if (this.touchingBarrier === 'left' && steerCmd < 0) steerCmd = 0;
     if (this.touchingBarrier === 'right' && steerCmd > 0) steerCmd = 0;
 
     const targetSteer = -(steerCmd) * this.maxSteerAngle * steerAttenuation;
     this.steerAngle += (targetSteer - this.steerAngle) * Math.min(1.0, delta * 12.0);
 
-    // Cancel opposing steer angle if scraping barrier
-    if (this.touchingBarrier === 'left' && this.steerAngle > 0) this.steerAngle = 0;
-    if (this.touchingBarrier === 'right' && this.steerAngle < 0) this.steerAngle = 0;
+    // Smoothly damp steer angle that would push further into wall (avoids 60Hz chatter)
+    if (this.touchingBarrier === 'left' && this.steerAngle > 0) {
+      this.steerAngle *= Math.max(0.0, 1.0 - delta * 15.0);
+    }
+    if (this.touchingBarrier === 'right' && this.steerAngle < 0) {
+      this.steerAngle *= Math.max(0.0, 1.0 - delta * 15.0);
+    }
 
     // Steer front wheels
     this.frontWheels.forEach(w => {
@@ -677,6 +682,9 @@ export class Car {
     // 5. Turn Car & Lateral Movement
     const yawRate = this.steerAngle * (speedRatio * 1.4 + 0.22);
     this.yaw += yawRate * delta * 1.8;
+    // Normalize yaw to [-PI, PI]
+    while (this.yaw > Math.PI) this.yaw -= Math.PI * 2;
+    while (this.yaw < -Math.PI) this.yaw += Math.PI * 2;
     this.mesh.rotation.y = this.yaw;
 
     // Move forward in world space

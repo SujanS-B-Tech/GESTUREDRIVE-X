@@ -25,12 +25,14 @@ export class Engine {
     // 2. Camera Setup with Speed-Sensitive FOV & Anti-Jitter Smoothing
     this.baseFov = 66;
     this.targetFov = 66;
-    this.camera = new THREE.PerspectiveCamera(this.baseFov, this.width / this.height, 0.2, 1400);
+    // High-precision depth buffer (0.45m near plane avoids Z-fighting on road decals at medium-far distance)
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, this.width / this.height, 0.45, 1200);
 
     // Camera modes: 'chase' | 'hood' | 'orbit'
     this.cameraMode = 'chase';
     this.camYaw = 0.0; // Smoothed camera heading to eliminate collision camera snap
     this.orbitAngle = 0.0;
+    this.smoothedLookTarget = null; // Unified damped look target
 
     // 3. WebGL Renderer with ACES Tone Mapping
     this.renderer = new THREE.WebGLRenderer({
@@ -222,44 +224,76 @@ export class Engine {
     }
   }
 
-  updateCamera(car, delta) {
+  updateCamera(car, delta, track = null) {
     if (!car || !car.mesh) return;
 
     const carPos = car.mesh.position;
     const speedRatio = Math.min(1.0, car.speed / car.maxSpeed);
 
     // Dynamic Speed FOV
-    this.targetFov = this.baseFov + speedRatio * 18.0 + (car.isNitroActive ? 8.0 : 0.0);
-    this.camera.fov += (this.targetFov - this.camera.fov) * Math.min(1.0, delta * 6.0);
+    this.targetFov = this.baseFov + speedRatio * 16.0 + (car.isNitroActive ? 6.0 : 0.0);
+    this.camera.fov += (this.targetFov - this.camera.fov) * Math.min(1.0, delta * 5.0);
     this.camera.updateProjectionMatrix();
 
     if (this.cameraMode === 'chase') {
-      // Smooth Third-Person Chase Camera with Yaw Damping to eliminate wall vibration
-      this.camYaw += (car.yaw - this.camYaw) * Math.min(1.0, delta * 6.0);
+      // Smooth camera heading with shortest-arc angle wrapping (eliminates angle sign-flip snaps)
+      let yawDiff = (car.yaw - this.camYaw) % (Math.PI * 2);
+      if (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      if (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      const yawAlpha = 1.0 - Math.exp(-8.0 * delta);
+      this.camYaw += yawDiff * yawAlpha;
       const heading = this.camYaw;
 
-      // Barrier collision boundary clamp: keep camera spring arm safely within boundaries
-      const maxCamX = 14.5;
-      const rawCamX = carPos.x - Math.sin(heading) * 8.6;
-      const targetCamX = Math.min(maxCamX, Math.max(-maxCamX, rawCamX));
-      const targetCamZ = carPos.z - Math.cos(heading) * 8.6;
+      // Ideal camera spring arm offset behind car
+      const armLength = 8.6;
+      const rawCamX = carPos.x - Math.sin(heading) * armLength;
+      const targetCamZ = carPos.z - Math.cos(heading) * armLength;
       const targetCamY = carPos.y + 3.6;
 
-      this.camera.position.x += (targetCamX - this.camera.position.x) * Math.min(1.0, delta * 14.0);
-      this.camera.position.y += (targetCamY - this.camera.position.y) * Math.min(1.0, delta * 12.0);
-      this.camera.position.z += (targetCamZ - this.camera.position.z) * Math.min(1.0, delta * 16.0);
+      // Dynamic lateral boundary clamp relative to curved procedural road centerline
+      let targetCamX = rawCamX;
+      if (track && typeof track.getCenterline === 'function') {
+        const roadCenterAtCam = track.getCenterline(targetCamZ);
+        const halfRoadWidth = (track.roadWidth || 18.0) * 0.5;
+        const maxLateralLimit = halfRoadWidth + 1.8;
+        targetCamX = Math.min(roadCenterAtCam + maxLateralLimit, Math.max(roadCenterAtCam - maxLateralLimit, rawCamX));
+      }
 
-      // Look ahead of car along forward vector
-      const lookTarget = new THREE.Vector3(
-        carPos.x + Math.sin(heading) * 12.0,
-        carPos.y + 1.2,
-        carPos.z + Math.cos(heading) * 12.0
+      // Critically damped unified position tracking across all axes (eliminates asymmetric oscillation)
+      const posAlpha = 1.0 - Math.exp(-12.0 * delta);
+      this.camera.position.x += (targetCamX - this.camera.position.x) * posAlpha;
+      this.camera.position.y += (targetCamY - this.camera.position.y) * posAlpha;
+      this.camera.position.z += (targetCamZ - this.camera.position.z) * posAlpha;
+
+      // Smoothly damped forward look target (eliminates frame-to-frame lookAt jerking)
+      if (!this.smoothedLookTarget) {
+        this.smoothedLookTarget = new THREE.Vector3(carPos.x, carPos.y + 1.2, carPos.z + 12.0);
+      }
+      const rawLookTargetX = carPos.x + Math.sin(heading) * 12.0;
+      const rawLookTargetY = carPos.y + 1.2;
+      const rawLookTargetZ = carPos.z + Math.cos(heading) * 12.0;
+      const lookAlpha = 1.0 - Math.exp(-14.0 * delta);
+      this.smoothedLookTarget.x += (rawLookTargetX - this.smoothedLookTarget.x) * lookAlpha;
+      this.smoothedLookTarget.y += (rawLookTargetY - this.smoothedLookTarget.y) * lookAlpha;
+      this.smoothedLookTarget.z += (rawLookTargetZ - this.smoothedLookTarget.z) * lookAlpha;
+      this.camera.lookAt(this.smoothedLookTarget);
+
+      // Snap sun shadow camera to shadow map texel grid to eliminate shadow crawling and flickering
+      const shadowMapSize = this.dirLight.shadow.mapSize.width || 2048;
+      const shadowFrustumSize = 84;
+      const texelSize = shadowFrustumSize / shadowMapSize;
+
+      const lightRawX = carPos.x + 45;
+      const lightRawZ = carPos.z - 55;
+      const snappedX = Math.round(lightRawX / texelSize) * texelSize;
+      const snappedZ = Math.round(lightRawZ / texelSize) * texelSize;
+
+      this.dirLight.position.set(snappedX, carPos.y + 95, snappedZ);
+      this.dirLight.target.position.set(
+        Math.round(carPos.x / texelSize) * texelSize,
+        carPos.y,
+        Math.round(carPos.z / texelSize) * texelSize
       );
-      this.camera.lookAt(lookTarget);
-
-      // Keep key sun light centered on player
-      this.dirLight.position.set(carPos.x + 45, carPos.y + 95, carPos.z - 55);
-      this.dirLight.target.position.copy(carPos);
       this.dirLight.target.updateMatrixWorld();
 
     } else if (this.cameraMode === 'hood') {

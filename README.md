@@ -98,9 +98,25 @@ ue5_bridge/
 
 ## 🧪 Automated Test Results
 
-All test suites verify mathematically and structurally:
+All test suites verify mathematically, physically, and structurally:
 
-### 1. Two-Hand Steering Math & Audio Lifecycle (`npm test`)
+### 1. Comprehensive 13-Scenario Verification Suite (`node test_13_scenarios.js` / `npm test`)
+- ✓ **[Scenario 1] Neutral Deadzone**: Wobble = 0.0000; micro-tremors suppressed within `±2°` (`±0.035 rad`).
+- ✓ **[Scenario 2] Smooth Transitions**: Sine wave transitions executed without sign-flips (max frame delta = 0.132).
+- ✓ **[Scenario 3] Sustained Lock**: Maintains full-lock steering (-1.0) without drift or premature decay.
+- ✓ **[Scenario 4] Hand-Loss Buffering**: Buffered tracking loss holds steering (-0.846) across short dropouts and recovers instantly (-0.982).
+- ✓ **[Scenario 5] Disconnect/Reconnect**: Safely zeros vehicle inputs and reconnects smoothly.
+- ✓ **[Scenario 6] Stale Message Watchdog**: Watchdog triggers at >200ms age (250ms tested) to clear stale inputs.
+- ✓ **[Scenario 7] High-Speed Dynamics**: Full-lock steering at 230 km/h maintains invariant numerical yaw.
+- ✓ **[Scenario 8] Concurrent Controls**: Throttle cuts on brake without locking steering; Nitro activates concurrently.
+- ✓ **[Scenario 9] Centerline Curve Tracking**: Follow-camera tracks highway bends up to X = 15.99m without boundary clipping.
+- ✓ **[Scenario 10] Sustained Wall Contact**: 310 continuous frames of left/right wall contact yield **0 camera flickers / sign-flips**.
+- ✓ **[Scenario 11] Collision Recovery**: 6 successive traffic impacts absorbed smoothly with zero teleportation or speed stalls.
+- ✓ **[Scenario 12] Extended Gameplay Performance**: 10,000 continuous frames execute in 26ms (2.6 µs/frame, heap delta: -0.14 MB).
+- ✓ **[Scenario 13] Multi-Framerate Invariance**: Tested across 30, 60, 120, and 144 FPS with ΔX = 0.000m.
+- ✓ **100% Passed (13/13 scenarios)**
+
+### 2. Two-Hand Steering Math & Audio Lifecycle (`npm run test:webcam`)
 - ✓ Level hands produce neutral straight steering (`steer = 0.0`)
 - ✓ Deadzone filters hand micro-tremors (`steer = 0.0`)
 - ✓ Turning wheel left produces smooth, natural left steering (`steer = -0.987`)
@@ -110,12 +126,12 @@ All test suites verify mathematically and structurally:
 - ✓ End-to-end car physics moves vehicle in correct screen direction
 - ✓ **100% Passed (9/9 tests)**
 
-### 2. Wall Collision Stability & Screen Flicker Elimination (`npm run test:collision`)
+### 3. Wall Collision Stability & Screen Flicker Elimination (`npm run test:collision`)
 - ✓ Baseline reproduction: 7 camera reversals and 0.478m/frame violent snaps reproduced
 - ✓ Engineered continuous slide physics: 0 oscillations, 0 yaw jitter, smooth monotonic glide
 - ✓ **100% Passed**
 
-### 3. Standalone PC & UE5 Bridge Integration (`npm run test:integration`)
+### 4. Standalone PC & UE5 Bridge Integration (`npm run test:integration`)
 - ✓ REST status endpoint responds HTTP 200
 - ✓ Game assets delivered (20+ KB HTML/CSS/JS)
 - ✓ UE5 C++ Bridge WebSocket connects and registers successfully

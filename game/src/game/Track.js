@@ -65,20 +65,26 @@ export class Track {
       metalness: 0.25
     });
 
-    // 2. Dashed Lane Markings (Crisp Clean White)
+    // 2. Dashed Lane Markings (Crisp Clean White) with depth offset to eliminate Z-fighting
     this.markingMat = new THREE.MeshBasicMaterial({
-      color: 0xf5f8ff
+      color: 0xf5f8ff,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.0,
+      polygonOffsetUnits: -1.0
     });
 
     // 3. Red & White Apex Racing Rumble Curbs
     this.curbRedMat = new THREE.MeshBasicMaterial({ color: 0xff0028 });
     this.curbWhiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
-    // 4. Rubber Skid Mark Overlays
+    // 4. Rubber Skid Mark Overlays with depth offset
     this.skidMat = new THREE.MeshBasicMaterial({
       color: 0x0c0e12,
       transparent: true,
-      opacity: 0.65
+      opacity: 0.65,
+      polygonOffset: true,
+      polygonOffsetFactor: -1.5,
+      polygonOffsetUnits: -1.5
     });
 
     // 5. Raised Highway Cat-Eye Reflectors (Glowing Amber & White)
@@ -147,6 +153,13 @@ export class Track {
     });
     this.streetlampHeadMat = new THREE.MeshBasicMaterial({
       color: 0xfffaea
+    });
+
+    // Pre-allocated Highway Gantry Signboard Material (avoids runtime shader recompilations)
+    this.gantrySignMat = new THREE.MeshStandardMaterial({
+      color: 0x0f4024,
+      roughness: 0.35,
+      metalness: 0.25
     });
 
     // 14. Modern City Glass & Concrete High-Rise Towers
@@ -293,12 +306,12 @@ export class Track {
       for (let s = 0; s < stripeCount; s++) {
         const stripeZ = -this.segmentLength / 2 + s * (stripeLen + stripeGap) + stripeLen / 2;
         const stripe = new THREE.Mesh(this.stripeGeo, this.markingMat);
-        stripe.position.set(x, 0.012, stripeZ);
+        stripe.position.set(x, 0.022, stripeZ);
         segment.add(stripe);
 
         // Raised cats-eye reflector every stripe
         const catsEye = new THREE.Mesh(this.catsEyeGeo, this.catsEyeMat);
-        catsEye.position.set(x, 0.024, stripeZ + stripeLen / 2 + 1.5);
+        catsEye.position.set(x, 0.035, stripeZ + stripeLen / 2 + 1.5);
         segment.add(catsEye);
       }
     });
@@ -311,10 +324,10 @@ export class Track {
 
       // Left Curb
       const curbL = new THREE.Mesh(this.curbGeo, curbMat);
-      curbL.position.set(-this.roadWidth / 2 + 0.38, 0.02, curbZ);
+      curbL.position.set(-this.roadWidth / 2 + 0.38, 0.025, curbZ);
       // Right Curb
       const curbR = new THREE.Mesh(this.curbGeo, curbMat);
-      curbR.position.set(this.roadWidth / 2 - 0.38, 0.02, curbZ);
+      curbR.position.set(this.roadWidth / 2 - 0.38, 0.025, curbZ);
       segment.add(curbL, curbR);
     }
 
@@ -322,7 +335,7 @@ export class Track {
     if (segIndex % 2 === 0) {
       [-2.1, 2.3].forEach(x => {
         const skid = new THREE.Mesh(this.skidGeo, this.skidMat);
-        skid.position.set(x, 0.015, (Math.random() - 0.5) * 20.0);
+        skid.position.set(x, 0.024, (Math.random() - 0.5) * 20.0);
         skid.rotation.y = (Math.random() - 0.5) * 0.15;
         segment.add(skid);
       });
@@ -489,13 +502,8 @@ export class Track {
     beam.position.set(0, 9.0, 0);
     gantry.add(beam);
 
-    // Green Highway Directional Signboard
-    const signMat = new THREE.MeshStandardMaterial({
-      color: 0x0f4024,
-      roughness: 0.35,
-      metalness: 0.25
-    });
-    const sign = new THREE.Mesh(this.gantrySignGeo, signMat);
+    // Green Highway Directional Signboard (uses pre-allocated material)
+    const sign = new THREE.Mesh(this.gantrySignGeo, this.gantrySignMat);
     sign.position.set(0, 8.2, -0.4);
     gantry.add(sign);
 
@@ -636,17 +644,23 @@ export class Track {
     const limit = this.roadWidth / 2 - 1.25;
 
     if (relX > limit) {
-      // Smooth contact with left barrier: clamp position, align yaw parallel to road curve
+      // Smooth contact with left barrier: clamp position, align yaw parallel to road curve with normalized diff
       car.mesh.position.x = centerRoadX + limit;
       car.touchingBarrier = 'left';
-      car.yaw += (roadHeading - car.yaw) * Math.min(1.0, delta * 6.0);
+      let headingDiff = (roadHeading - car.yaw) % (Math.PI * 2);
+      if (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
+      if (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
+      car.yaw += headingDiff * Math.min(1.0, delta * 6.0);
       car.speed = Math.max(25.0, car.speed - (car.speed * 0.22 + 10.0) * delta);
       return { hit: true, side: 'left', x: centerRoadX + limit };
     } else if (relX < -limit) {
       // Smooth contact with right barrier
       car.mesh.position.x = centerRoadX - limit;
       car.touchingBarrier = 'right';
-      car.yaw += (roadHeading - car.yaw) * Math.min(1.0, delta * 6.0);
+      let headingDiff = (roadHeading - car.yaw) % (Math.PI * 2);
+      if (headingDiff > Math.PI) headingDiff -= Math.PI * 2;
+      if (headingDiff < -Math.PI) headingDiff += Math.PI * 2;
+      car.yaw += headingDiff * Math.min(1.0, delta * 6.0);
       car.speed = Math.max(25.0, car.speed - (car.speed * 0.22 + 10.0) * delta);
       return { hit: true, side: 'right', x: centerRoadX - limit };
     }

@@ -8,7 +8,9 @@
     "server": "node server/index.js",
     "game": "electron .",
     "app": "electron .",
-    "test": "node test_webcam_steering.js",
+    "test": "node test_13_scenarios.js",
+    "test:all": "node test_13_scenarios.js && node test_webcam_steering.js && node test_collision_stability.js",
+    "test:webcam": "node test_webcam_steering.js",
     "test:integration": "node test_integration.js",
     "test:collision": "node test_collision_stability.js"
   },

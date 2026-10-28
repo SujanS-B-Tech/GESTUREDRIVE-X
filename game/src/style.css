@@ -417,6 +417,50 @@ html, body {
   color: var(--text-muted);
 }
 
+/* Real-Time Diagnostic Mode Telemetry Panel */
+.cam-diag-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  background: rgba(8, 9, 13, 0.98);
+  border-top: 1px solid rgba(255, 17, 51, 0.4);
+  font-family: monospace;
+  font-size: 0.68rem;
+}
+
+.cam-diag-panel.hidden {
+  display: none !important;
+}
+
+.diag-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.diag-label {
+  color: #888d9e;
+  letter-spacing: 0.5px;
+}
+
+.diag-val {
+  color: #f0f2f8;
+  font-weight: 700;
+}
+
+.diag-val.text-green {
+  color: #00ff88;
+}
+
+.diag-val.text-yellow {
+  color: #ffcc00;
+}
+
+.diag-val.text-red {
+  color: #ff3344;
+}
+
 /* ==========================================================================
    NEAR-MISS COMBO ANNOUNCER
    ========================================================================== */

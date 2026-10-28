@@ -143,6 +143,10 @@ class GameApp {
         this.currentCamIndex = (this.currentCamIndex + 1) % this.cameraModes.length;
         this.engine.cameraMode = this.cameraModes[this.currentCamIndex];
       }
+      if (e.code === 'F1' || e.code === 'KeyI') {
+        // Toggle real-time diagnostic telemetry mode
+        if (this.hud) this.hud.toggleDiagnostics();
+      }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -380,18 +384,18 @@ class GameApp {
         nitro: kbNitro,
         source: 'keyboard'
       };
-    } else if (webcamInput && webcamInput.active && webcamInput.handDetected) {
+    } else if (webcamInput && webcamInput.active && webcamInput.handDetected && !webcamInput.isStale) {
       // Priority 2: Real-time Laptop Webcam Hand Gesture Steering!
       return {
         steer: webcamInput.steer,
-        throttle: (this.state === 'RACING') ? webcamInput.throttle : 0.0,
+        throttle: (this.state === 'RACING') ? (webcamInput.brake > 0.1 ? 0.0 : webcamInput.throttle) : 0.0,
         brake: webcamInput.brake,
         nitro: webcamInput.nitro,
         source: 'webcam'
       };
     } else {
       // Safe neutral cruise / coasting
-      const neutralSteer = (webcamInput && webcamInput.active) ? webcamInput.steer : 0.0;
+      const neutralSteer = (webcamInput && webcamInput.active && !webcamInput.isStale) ? webcamInput.steer : 0.0;
       return {
         steer: neutralSteer,
         throttle: 0.0,
@@ -419,8 +423,8 @@ class GameApp {
       }
     }
 
-    // 3. Update Camera
-    this.engine.updateCamera(this.car, delta);
+    // 3. Update Camera with procedural highway track centerline
+    this.engine.updateCamera(this.car, delta, this.track);
 
     // 4. Render 3D Scene
     this.engine.render();

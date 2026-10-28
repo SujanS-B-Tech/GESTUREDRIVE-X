@@ -70,6 +70,7 @@
           <span id="cam-status-text">WEBCAM OFF</span>
         </div>
         <div class="cam-header-buttons">
+          <button class="btn-hud-icon active" id="btn-hud-cam-diag" title="Toggle Real-Time Diagnostics [F1 / I]">📊</button>
           <button class="btn-hud-icon" id="btn-hud-cam-calibrate" title="Calibrate Neutral Steering Wheel Center">🎯</button>
           <button class="btn-hud-icon" id="btn-hud-cam-invert" title="Invert Steering Direction">🔄</button>
           <button class="btn-hud-icon active" id="btn-hud-cam-toggle" title="Toggle Webcam Steering">📹</button>
@@ -101,6 +102,15 @@
       <div class="cam-hud-footer">
         <span class="cam-dir-badge" id="cam-dir-badge">▲ STRAIGHT</span>
         <span class="cam-steer-readout" id="cam-steer-readout">0°</span>
+      </div>
+
+      <!-- Real-Time Diagnostic Mode Telemetry Panel -->
+      <div class="cam-diag-panel" id="cam-diag-panel">
+        <div class="diag-row"><span class="diag-label">CONNECTION</span><span class="diag-val" id="diag-conn-val">ONLINE</span></div>
+        <div class="diag-row"><span class="diag-label">TRACKING</span><span class="diag-val" id="diag-track-val">2 HANDS (WHEEL)</span></div>
+        <div class="diag-row"><span class="diag-label">GESTURE</span><span class="diag-val text-red" id="diag-gesture-val">DRIVE_STRAIGHT</span></div>
+        <div class="diag-row"><span class="diag-label">STEER RAW/SMOOTH</span><span class="diag-val" id="diag-steer-val">0.000 / 0.000</span></div>
+        <div class="diag-row"><span class="diag-label">INPUT AGE / FPS</span><span class="diag-val" id="diag-age-val">16ms (32 FPS)</span></div>
       </div>
     </div>
 

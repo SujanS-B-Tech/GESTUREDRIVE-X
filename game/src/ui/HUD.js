@@ -47,6 +47,32 @@ export class HUD {
     this.camSteerNeedle = document.getElementById('cam-steer-needle');
     this.camDirBadge = document.getElementById('cam-dir-badge');
     this.camSteerReadout = document.getElementById('cam-steer-readout');
+
+    // Diagnostic Telemetry HUD
+    this.diagPanel = document.getElementById('cam-diag-panel');
+    this.btnCamDiag = document.getElementById('btn-hud-cam-diag');
+    this.diagConnVal = document.getElementById('diag-conn-val');
+    this.diagTrackVal = document.getElementById('diag-track-val');
+    this.diagGestureVal = document.getElementById('diag-gesture-val');
+    this.diagSteerVal = document.getElementById('diag-steer-val');
+    this.diagAgeVal = document.getElementById('diag-age-val');
+    this.isDiagnosticsVisible = true;
+
+    if (this.btnCamDiag) {
+      this.btnCamDiag.addEventListener('click', () => this.toggleDiagnostics());
+    }
+  }
+
+  toggleDiagnostics(forceState = null) {
+    this.isDiagnosticsVisible = (forceState !== null) ? forceState : !this.isDiagnosticsVisible;
+    if (this.diagPanel) {
+      if (this.isDiagnosticsVisible) this.diagPanel.classList.remove('hidden');
+      else this.diagPanel.classList.add('hidden');
+    }
+    if (this.btnCamDiag) {
+      if (this.isDiagnosticsVisible) this.btnCamDiag.classList.add('active');
+      else this.btnCamDiag.classList.remove('active');
+    }
   }
 
   show() {
@@ -170,6 +196,34 @@ export class HUD {
         if (this.camDirBadge) {
           this.camDirBadge.textContent = '▲ NEUTRAL';
           this.camDirBadge.className = 'cam-dir-badge';
+        }
+      }
+
+      // 8. Real-Time Diagnostic Mode Telemetry Panel Updates
+      if (this.isDiagnosticsVisible && this.diagPanel) {
+        if (this.diagConnVal) {
+          this.diagConnVal.textContent = webcamInput.connectionStatus || (webcamInput.active ? 'ONLINE' : 'OFF');
+        }
+        if (this.diagTrackVal) {
+          this.diagTrackVal.textContent = webcamInput.handDetected
+            ? `${webcamInput.handsCount || 2} HANDS (WHEEL)`
+            : (webcamInput.handsCount === 1 ? '1 HAND (HOLD 2)' : 'NO HANDS DETECTED');
+        }
+        if (this.diagGestureVal) {
+          this.diagGestureVal.textContent = webcamInput.gesture || 'DRIVE_STRAIGHT';
+        }
+        if (this.diagSteerVal) {
+          const raw = typeof webcamInput.rawSteer === 'number' ? webcamInput.rawSteer.toFixed(3) : '0.000';
+          const sm = typeof webcamInput.steer === 'number' ? webcamInput.steer.toFixed(3) : '0.000';
+          this.diagSteerVal.textContent = `${raw} / ${sm}`;
+        }
+        if (this.diagAgeVal && typeof webcamInput.inputAgeMs === 'number') {
+          const age = webcamInput.inputAgeMs;
+          const fps = webcamInput.fps || 32;
+          this.diagAgeVal.textContent = `${age}ms (${fps} FPS)`;
+          if (age < 60) this.diagAgeVal.className = 'diag-val text-green';
+          else if (age < 150) this.diagAgeVal.className = 'diag-val text-yellow';
+          else this.diagAgeVal.className = 'diag-val text-red';
         }
       }
     } else {

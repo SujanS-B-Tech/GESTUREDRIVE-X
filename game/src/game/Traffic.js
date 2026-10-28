@@ -195,19 +195,27 @@ export class TrafficManager {
 
       if (dx < minX && dz < minZ) {
         // Crash / Collision occurred!
-        if (onCollision) {
+        if (!v.isColliding && onCollision) {
           onCollision(v, {
             impactX: (playerPos.x + v.mesh.position.x) / 2,
             impactZ: (playerPos.z + v.mesh.position.z) / 2
           });
         }
 
-        // Physical impulse reaction
-        playerCar.speed *= 0.55; // Drop speed
-        v.speed *= 0.7;
-        // Bounce player sideways away from traffic car
-        playerCar.mesh.position.x += (playerPos.x > v.mesh.position.x ? 1.2 : -1.2);
-        playerCar.yaw += (playerPos.x > v.mesh.position.x ? 0.08 : -0.08);
+        // Physical impulse reaction on initial impact
+        if (!v.isColliding) {
+          playerCar.speed *= 0.55; // Drop speed
+          v.speed *= 0.7;
+          playerCar.yaw += (playerPos.x > v.mesh.position.x ? 0.04 : -0.04);
+        }
+
+        // Minimum separation displacement to resolve penetration without teleportation snapping
+        const overlapX = minX - dx;
+        const pushX = (playerPos.x > v.mesh.position.x ? 1 : -1) * (overlapX + 0.05);
+        playerCar.mesh.position.x += pushX * Math.min(1.0, delta * 20.0);
+        v.isColliding = true;
+      } else {
+        v.isColliding = false;
       }
 
       // 4. Near-Miss Reward Check (Thrill factor!)
